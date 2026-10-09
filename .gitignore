@@ -1,0 +1,19 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 游戏运行时数据（存档与日志由玩家本地生成，不入库）
+save.json
+save.json.tmp
+life_log.txt
+data/
+_selftest/
+
+# 编辑器
+.vscode/*.log
+.idea/
+*.swp
+.DS_Store
