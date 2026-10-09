@@ -8036,10 +8036,33 @@ if tk is not None:
 
 def make_console_safe():
     """
-    控制台编码兼容处理：
-    Windows 默认控制台编码可能是 GBK，直接 print 特殊符号会抛 UnicodeEncodeError。
-    这里把标准输出/错误切换为 UTF-8（失败则回退为可替换字符），保证命令行永不崩溃。
+    控制台兼容处理：
+      1. Windows 默认控制台编码可能是 GBK，直接 print 特殊符号会抛
+         UnicodeEncodeError；这里把标准输出/错误切到 UTF-8（失败则替换字符）。
+      2. 用 --windowed 打包的 exe 没有控制台，sys.stdout/stderr 可能是 None，
+         此时换成空对象，避免 print 触发 "AttributeError: 'NoneType'"。
     """
+    if sys.stdout is None or sys.stderr is None:
+        class _NullStream(object):
+            def write(self, *_a, **_k):
+                return 0
+
+            def flush(self):
+                pass
+
+            def reconfigure(self, *_a, **_k):
+                pass
+
+            def isatty(self):
+                return False
+
+            def fileno(self):
+                raise OSError("no console")
+        if sys.stdout is None:
+            sys.stdout = _NullStream()
+        if sys.stderr is None:
+            sys.stderr = _NullStream()
+        return
     for stream_name in ("stdout", "stderr"):
         stream = getattr(sys, stream_name, None)
         if stream is None:
@@ -8251,14 +8274,16 @@ def run_selftest(base_dir=None, days=2000, verbose=True):
 
 BANNER = """
 ================================================================================
-                    弹窗式文字人生模拟器  Life Simulator
+                    Life Simulator  (Chuang-Kou-Shi Ren-Sheng Mo-Ni-Qi)
 ================================================================================
- 玩法：选择城市开局 → 每天点「推进一天」掷骰抽事件 → 事件弹窗做选择
-       → 结算属性变化 → 选择当日行动（休息 / 工作 / 娱乐）→ 时间 +1 天
- 骰子：d100 判定事件大类与结果，d4 / d6 / d10 / d20 判定效果强度
-       掷出 100 / 99 / 2 / 1 等极端点数会触发隐藏特殊剧情
- 生死：健康归零即死亡；幸福长期低于 20 会持续扣健康；体温偏离正常区间持续掉血
- 存档：save.json        日志：life_log.txt（死亡时自动追加人生总结）
+ How to play : pick a city -> click "Advance 1 day" -> roll the dice for an event
+               -> choose an option -> then spend up to 8 actions that same day
+ Dice        : d10000 decides whether an event happens, d100 the category,
+               d4/d6/d10/d20 the effect strength; extreme rolls unlock secrets
+ Life        : health 0 = death, low happiness drains health, body temp matters
+ Save file   : save.json        Life log : life_log.txt
+ NOTE        : this console is only a launcher. All gameplay happens in the GUI
+               window. You may close this black window after the game starts.
 ================================================================================
 """
 
@@ -8313,20 +8338,29 @@ def main(argv=None):
         print(msg)
         return 0 if ok else 1
 
+    # 控制台只用 ASCII 输出：中文 Windows 控制台默认是 GBK 代码页，
+    # 直接打印中文会变成乱码；而真正的游戏内容都在图形窗口里。
+    portable_now = (os.path.abspath(base_dir) == os.path.abspath(portable_dir()))
     print(BANNER)
-    print("数据目录：%s" % base_dir)
-    print("运行模式：%s" % ("便携模式（存档与游戏同文件夹）" if
-                          os.path.abspath(base_dir) == os.path.abspath(portable_dir())
-                          else "默认模式"))
+    print("  Data dir   : %s" % base_dir)
+    print("  Mode       : %s" % ("PORTABLE (saves stay in this folder)"
+                                 if portable_now else "DEFAULT"))
+    print("  Save file  : %s" % safe_join(base_dir, SAVE_FILE_NAME))
+    print("  Life log   : %s" % safe_join(base_dir, LOG_FILE_NAME))
     for note in notes:
-        print("提示：%s" % note)
-    print("存档文件：%s" % safe_join(base_dir, SAVE_FILE_NAME))
-    print("人生日志：%s" % safe_join(base_dir, LOG_FILE_NAME))
+        # 说明信息里可能含中文路径，转成 ascii 安全形式避免乱码
+        try:
+            print("  Note       : %s" % note.encode("ascii", "replace").decode("ascii"))
+        except Exception:
+            pass
+    print("")
     if mod_count:
-        print("已加载模组 %d 个：" % mod_count)
-        print(loaded_mods_text())
+        print("  Mods loaded: %d" % mod_count)
     for note in mod_notes:
-        print("模组提示：%s" % note)
+        try:
+            print("  Mod note   : %s" % note.encode("ascii", "replace").decode("ascii"))
+        except Exception:
+            pass
 
     if tk is None:
         print("\n[错误] 当前 Python 环境缺少 tkinter，无法启动弹窗界面。")

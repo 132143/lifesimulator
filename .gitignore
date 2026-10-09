@@ -16,7 +16,8 @@ _selftest/
 # 打包产物
 release/
 dist/
-build/*.spec
+build_exe/
+*.spec
 
 # 编辑器
 .vscode/*.log

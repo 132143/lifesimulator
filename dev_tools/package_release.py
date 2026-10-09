@@ -60,13 +60,41 @@ PORTABLE_MARKER_TEXT = """这个文件代表"便携模式"。
 （删掉它，游戏就会改用系统默认目录保存）"""
 
 
+def bat_bytes(text):
+    """
+    把批处理脚本文本转成"中文 Windows cmd 能正确解析"的字节：
+        1. 行尾统一为 CRLF（cmd 用 LF 会错乱解析，把中文/引号拆成命令）
+        2. 编码用 GBK/cp936（cmd 默认代码页；UTF-8 中文会变乱码并报
+           "'ho' 不是内部或外部命令" 这类错误）
+        3. 不带 BOM
+    返回 bytes。
+    """
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\r\n")
+    for enc in ("gbk", "cp936", "utf-8"):
+        try:
+            return text.encode(enc)
+        except UnicodeEncodeError:
+            continue
+    return text.encode("utf-8", "replace")
+
+
+def read_text_auto(path):
+    """自动尝试 utf-8 / utf-8-sig / gbk 读取文本。"""
+    raw = open(path, "rb").read()
+    for enc in ("utf-8-sig", "utf-8", "gbk", "cp936"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", "replace")
+
+
 def find_project_root():
     """
     定位"待打包项目"的根目录（含 LifeSimulator.py 的目录）。
     查找顺序：
-        1. 命令行 --root 显式指定（在 main 里处理）
-        2. 当前工作目录及其向上两层（从项目根运行时最准）
-        3. 脚本所在目录及其向上两层（脚本放在 dev_tools/ 或 build/ 里时）
+        1. 当前工作目录及其向上两层（从项目根运行时最准）
+        2. 脚本所在目录及其向上两层（脚本放在 dev_tools/ 或 build/ 里时）
     """
     cands = []
     cwd = os.getcwd()
@@ -113,8 +141,15 @@ def build_release(root, out_dir, zip_name, with_source=False, keep_stage=False):
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for src, dst in files:
             full = os.path.join(root, src)
-            zf.write(full, dst)
-            total_bytes += os.path.getsize(full)
+            if dst.lower().endswith(".bat"):
+                # 批处理脚本必须转成 CRLF + GBK，否则中文 Windows 的 cmd 会报
+                # "'ho' 不是内部或外部命令" 这类乱码错误
+                data = bat_bytes(read_text_auto(full))
+                zf.writestr(dst, data)
+                total_bytes += len(data)
+            else:
+                zf.write(full, dst)
+                total_bytes += os.path.getsize(full)
             packed += 1
         # 便携标记
         zf.writestr(PORTABLE_MARKER_NAME, PORTABLE_MARKER_TEXT)

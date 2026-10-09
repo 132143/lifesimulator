@@ -200,7 +200,16 @@ python dev_tools\package_release.py --with-source
 **朋友的体验**：解压 → 双击 `启动游戏.bat` → 玩 → 存档自动出现在 `save\`。
 只需要装一次 Python（不用 pip 装任何东西）。
 
-详细说明见 [`docs\打包与分发指南.md`](docs/打包与分发指南.md)（含免安装 exe 打包方法、发布自检清单、常见问题）。
+**免安装 exe 版（朋友完全不用装 Python）**：
+
+```bat
+python dev_tools\build_exe.py
+→ release\LifeSimulator_v3.0_免安装版.zip      （约 10 MB）
+```
+
+产物里 `LifeSimulator.exe` 双击即玩，`_internal\` 是内置的 Python 运行时（必须一起保留）。
+
+详细说明见 [`docs\打包与分发指南.md`](docs/打包与分发指南.md)（含 exe 打包方法、目录式与单文件对比、发布自检清单、常见问题）。
 
 ---
 
