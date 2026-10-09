@@ -7193,26 +7193,51 @@ if tk is not None:
                     pass
 
         def refresh_action_points(self):
-            """刷新行动点显示，并按剩余行动点禁用/启用操作按钮。"""
+            """
+            刷新行动点显示，并按剩余行动点启用/禁用操作按钮。
+
+            规则（重要）：
+              * 当天只要还有行动点、且没有待处理事件，操作按钮就应该是**可点**的，
+                可以连续点 8 次，中间不需要点「跳过这一天」；
+              * 行动点耗尽后禁用操作按钮，并把「推进一天」按钮文字改成
+                「推进到下一天」，引导玩家直接进入第二天。
+            """
             p = self.player
             if p is None:
-                self.ap_var.set("行动点 --/8")
+                self.ap_var.set("行动点 --/%d" % ACTION_POINTS_PER_DAY)
                 return
             left = int(getattr(p, "action_points", 0))
+            used = int(getattr(p, "actions_today", 0))
+            pending = (self.sim is not None and self.sim.pending is not None)
             self.ap_var.set("行动点 %d/%d　今天已操作 %d 次" % (
-                left, ACTION_POINTS_PER_DAY, int(getattr(p, "actions_today", 0))))
-            allow = (self.state in ("event", "action")) and not self.locked and not p.dead
+                left, ACTION_POINTS_PER_DAY, used))
+            # 还能行动的条件：有行动点 + 没有待处理事件 + 游戏进行中
+            base_ok = (not p.dead) and (not pending) and self.pending_card is None
             for key, btn in (self.action_buttons or {}).items():
                 cost = ACTION_COST.get(key, 1)
-                can = allow and left >= cost
+                can = base_ok and left >= cost
                 try:
                     btn.configure(state="normal" if can else "disabled")
-                    if not can and allow:
-                        btn.configure(text="%s(%d点)" % (ACTION_LABELS[key], cost))
-                    else:
-                        btn.configure(text=ACTION_LABELS[key])
+                    btn.configure(text=ACTION_LABELS[key])
                 except Exception:
                     pass
+            # 「推进一天」按钮：行动点用完时提示进入下一天
+            try:
+                if p.dead:
+                    self.btn_roll.configure(text="人生已结束", state="disabled")
+                elif pending or self.pending_card is not None:
+                    self.btn_roll.configure(text="先处理今天的事件", state="normal")
+                elif left >= ACTION_POINTS_PER_DAY:
+                    self.btn_roll.configure(text="推进一天（掷骰抽事件）", state="normal")
+                elif left > 0:
+                    self.btn_roll.configure(
+                        text="推进到下一天（还剩 %d 点行动点）" % left, state="normal")
+                else:
+                    self.btn_roll.configure(text="推进到下一天（行动点已用完）", state="normal")
+                self.btn_skip_day.configure(
+                    text="略过剩余行动点，直接到下一天", state="normal")
+            except Exception:
+                pass
 
         # ------------------------------------------------------------------
         # 核心流程：推进一天
@@ -7229,11 +7254,9 @@ if tk is not None:
             if self.player.dead:
                 self.show_death_panel()
                 return
-            if self.state == "action":
-                self.alert("今天已经行动过了",
-                           "你今天已经选择了「休息 / 工作 / 娱乐」中的一项行动，时间已经推进到第二天。\n"
-                           "请继续点击「推进一天」抽取新的事件。")
-                return
+            # 注意：这里**不再**因为"今天已经行动过"而拦截。
+            # 一天有 8 点行动点，点几次操作都行；行动点用完后
+            # 直接点「推进一天」就进入第二天（不需要先点"跳过这一天"）。
             # 有未完成选择的事件卡时，不重复推进时间，直接重新打开该事件
             if self.sim is not None and self.sim.pending is not None:
                 card = self.sim.pending.get("card")
@@ -7253,18 +7276,22 @@ if tk is not None:
                     return
                 if card.get("tone") == "event":
                     self.state = "event"
+                    self.refresh_action_points()
                     self.show_event_dialog(card)
                 else:
-                    # 平静的一天
+                    # 平静的一天：直接在主窗口提示，不弹模态框，方便立刻连续操作
                     self.state = "action"
-                    self.set_actions_enabled(True)
                     self.clear_main()
                     self.write_main("═══ %s ═══" % self.sim.player.date_full, "h")
                     self.write_main(card.get("text", "今天什么也没有发生。"))
-                    self.set_status("今天什么也没有发生，你可以安排一次行动。",
-                                    "选择「休息恢复 / 工作赚钱 / 娱乐消费」，时间会推进到第二天。")
-                    self.show_panel("平静的一天", card.get("text", ""),
-                                    [("确定", "ok", None)], width=680, height=440)
+                    self.write_main("")
+                    self.write_main("　→ 今天有 %d 点行动点，可以连续点击下面的操作按钮"
+                                    "（休息 / 工作 / 娱乐 / 学习 / 社交 / 锻炼 / 亲密 / 陪伴）。"
+                                    % ACTION_POINTS_PER_DAY, "warn")
+                    self.set_status("今天什么也没有发生，可以安排行动（行动点 %d/%d）。" % (
+                        int(self.player.action_points), ACTION_POINTS_PER_DAY),
+                        "同一天可以连续操作，行动点用完后点「推进到下一天」。")
+                    self.refresh_action_points()
                 self.auto_save()
                 self.locked = False
             except Exception as exc:
@@ -7334,9 +7361,11 @@ if tk is not None:
                     self.handle_death(self.sim.last_report)
                     return
                 self.state = "action"
-                self.set_actions_enabled(True)
-                self.set_status("事件已结算，你可以安排今天的行动。",
-                                "选择「休息恢复 / 工作赚钱 / 娱乐消费」，时间会推进到第二天。")
+                left = int(getattr(self.player, "action_points", 0))
+                self.set_status("事件已结算，可以安排今天的行动（行动点 %d/%d）。" % (
+                    left, ACTION_POINTS_PER_DAY),
+                    "同一天可连续操作；行动点用完后直接点「推进到下一天」。")
+                self.refresh_action_points()
                 self.auto_save()
                 self.locked = False
                 if result.get("followup"):
@@ -7423,15 +7452,25 @@ if tk is not None:
         # 当天操作（一天最多 8 次，不推进日期） / 跳过这一天 / 时间跳跃
         # ------------------------------------------------------------------
         def on_action(self, key):
-            """在当天执行一次操作：消耗行动点，不推进日期。"""
+            """在当天执行一次操作：消耗行动点，**不推进日期**，可以连续点。"""
             if self.locked or self.player is None:
                 return
             if self.player.dead:
                 self.show_death_panel()
                 return
-            if self.state not in ("event", "action"):
-                self.alert("还不能行动",
-                           "请先点击「推进一天」抽取并处理今天的事件，之后再安排行动。")
+            # 只有在"还没开始今天 / 有未处理事件 / 有未选择的事件卡"时才拦
+            if self.sim is not None and self.sim.pending is not None:
+                self.alert("事件尚未处理",
+                           "今天的事件还没有做出选择，请先在事件弹窗里选择处理方式。")
+                return
+            if self.pending_card is not None:
+                card = self.pending_card
+                self.alert("事件尚未处理", "你还有一个事件没有做出选择。")
+                self.show_event_dialog(card)
+                return
+            if self.state == "idle":
+                self.alert("尚未开始人生",
+                           "请先创建人物或读取存档，再安排当天行动。")
                 return
             try:
                 self.locked = True
@@ -7441,25 +7480,19 @@ if tk is not None:
                     self._do_intimacy_flow()
                     return
                 result = self.sim.apply_daily_action(key)
-                self.update_hud()
                 if result.get("tone") == "warn":
                     self.locked = False
-                    self.refresh_action_points()
+                    self.update_hud()
                     self.alert("无法执行该操作", result.get("text", ""))
                     return
-                body = "【%s】  行动点 %d/%d\n\n" % (
-                    result.get("title", "行动"),
-                    int(self.player.action_points), ACTION_POINTS_PER_DAY)
-                body += "\n".join(result.get("settlement_lines") or [])
-                if result.get("dice_lines"):
-                    body += "\n\n—— 骰子 ——\n" + "\n".join(result["dice_lines"])
-                body += "\n\n（操作不推进日期，今天还可以继续操作；" \
-                        "想要结束这一天请点「跳过这一天」或「推进一天」）"
+                self.update_hud()
+                # ---- 结果直接写进主窗口（不再弹模态对话框，避免挡住下一次点击）----
                 self.clear_main()
                 self.write_main("═══ %s ═══　行动点 %d/%d" % (
                     self.player.date_full, int(self.player.action_points),
                     ACTION_POINTS_PER_DAY), "h")
-                self.write_main("【%s】" % result.get("title", "行动"), "h")
+                self.write_main("今天是第 %d 次操作：【%s】" % (
+                    int(self.player.actions_today), result.get("title", "行动")), "h")
                 for ln in (result.get("settlement_lines") or []):
                     tag = None
                     if any(w in ln for w in ("死亡", "过低", "过高", "发作", "恶化")):
@@ -7469,14 +7502,19 @@ if tk is not None:
                     self.write_main("    " + ln, tag)
                 if result.get("dice_lines"):
                     self.write_main("")
+                    self.write_main("—— 骰子 ——", "dim")
                     for ln in result["dice_lines"]:
                         self.write_main("    " + ln, "mono")
-                self.set_status("操作已结算（不推进日期）。当前行动点 %d/%d。" % (
-                    int(self.player.action_points), ACTION_POINTS_PER_DAY),
-                    "同一天最多 8 次操作；点「跳过这一天」结束当天。")
-                self.show_panel("今天第 %d 次操作：%s" % (
-                    int(self.player.actions_today), result.get("title", "行动")),
-                    body, [("确定", "ok", None)], width=760, height=560)
+                left = int(self.player.action_points)
+                if left > 0:
+                    tip = ("还可以继续点下面的操作按钮（今天还能操作 %d 次）；"
+                           "行动点用完后直接点「推进到下一天」。" % left)
+                else:
+                    tip = "今天的行动点已经用完，点「推进到下一天」抽取新的事件。"
+                self.write_main("")
+                self.write_main("　→ " + tip, "warn")
+                self.set_status("第 %d 次操作完成（未推进日期）。行动点 %d/%d。" % (
+                    int(self.player.actions_today), left, ACTION_POINTS_PER_DAY), tip)
                 self.refresh_action_points()
                 self.auto_save()
                 self.locked = False
@@ -7558,7 +7596,11 @@ if tk is not None:
                            % (exc, traceback.format_exc(limit=4)))
 
         def on_skip_day(self, *_):
-            """跳过这一天：什么也不做，直接进入第二天。"""
+            """
+            「略过剩余行动点，直接到下一天」：
+            当天还有行动点时直接进入第二天（不消耗剩余点数）。
+            这是可选操作；行动点用完后直接点「推进到下一天」即可。
+            """
             if self.locked or self.player is None:
                 return
             if self.player.dead:
@@ -7568,34 +7610,34 @@ if tk is not None:
                 self.alert("事件尚未处理",
                            "今天还有一个事件没有做出选择，请先在事件弹窗里选择处理方式。")
                 return
+            left = int(getattr(self.player, "action_points", 0))
             try:
                 self.locked = True
                 result = self.sim.skip_day()
                 self.update_hud()
                 self.state = "event"
-                self.refresh_action_points()
                 if result.get("tone") == "dead":
                     self.locked = False
+                    self.refresh_action_points()
                     self.handle_death(self.sim.last_report)
                     return
                 lines = result.get("settlement_lines") or []
-                body = "【跳过这一天】\n\n" + ("\n".join(lines) if lines else "今天什么也没有做。")
-                body += "\n\n新的一天：%s（行动点已重置为 %d）" % (
-                    self.player.date_full, ACTION_POINTS_PER_DAY)
                 self.clear_main()
                 self.write_main("═══ %s ═══" % self.player.date_full, "h")
-                self.write_main("【跳过这一天】你没有做任何事，时间来到第二天。", "dim")
+                self.write_main("已略过剩余的 %d 点行动点，时间来到新的一天。" % left, "dim")
                 for ln in lines:
                     self.write_main("    " + ln)
-                self.set_status("已跳过这一天，现在是 %s。" % self.player.date_full,
-                                "行动点已重置为 %d，点「推进一天」抽取新事件。" % ACTION_POINTS_PER_DAY)
-                self.show_panel("跳过这一天", body, [("确定", "ok", None)],
-                                width=720, height=520)
+                self.write_main("")
+                self.write_main("　→ 新的一天行动点已重置为 %d，点「推进一天」抽取今天的事件。"
+                                % ACTION_POINTS_PER_DAY, "warn")
+                self.set_status("已进入 %s。" % self.player.date_full,
+                                "行动点已重置为 %d。" % ACTION_POINTS_PER_DAY)
+                self.refresh_action_points()
                 self.auto_save()
                 self.locked = False
             except Exception as exc:
                 self.locked = False
-                self.alert("运行时异常", "跳过这一天时出现异常：\n%s\n\n%s"
+                self.alert("运行时异常", "略过当天时出现异常：\n%s\n\n%s"
                            % (exc, traceback.format_exc(limit=4)))
 
         def on_skip_months(self, *_):
@@ -7871,8 +7913,18 @@ if tk is not None:
             text.append("（帮助面板底部另有「完整疾病表」按钮，可查看全部 %d 种疾病）"
                         % len(COMMON_DISEASE_KEYS))
             text.append("")
+            text.append("═══ 行动点（同一天可以连续操作）═══")
+            text.append("  * 每个游戏内的一天有 8 点行动点，每点可做 1 次操作，")
+            text.append("    也就是说**同一天可以连续点 8 次**：休息/工作/娱乐/学习/社交/锻炼。")
+            text.append("  * 操作**不会推进日期**，可以随便连着点，中途不需要点跳过。")
+            text.append("  * 行动点用完后，按钮会变灰，此时直接点「推进到下一天」")
+            text.append("    就会抽取新一天的事件并重置行动点（不需要点「略过」）。")
+            text.append("  * 「略过剩余行动点，直接到下一天」是可选操作：")
+            text.append("    当天还剩点数但你不想用了，可以点它提前进入第二天。")
+            text.append("  * 同一天重复做同一件事收益递减（第 2 次 85%，第 3 次 72%…最低 40%）。")
+            text.append("")
             text.append("═══ 家庭与生育 ═══")
-            text.append("  1. 16 岁后可恋爱，22 岁后可结婚；结婚后每天可进行一次「夫妻亲密」。")
+            text.append("  1. 16 岁后可恋爱，22 岁后可结婚；结婚后每天可进行「夫妻亲密」（消耗 1 点行动点，每天最多 1 次）。")
             text.append("  2. 亲密会提升幸福度，并可能受孕（可选择避孕方式：安全期 55%、"
                         "避孕套 92%、短效避孕药 98%）。")
             text.append("  3. 受孕概率随年龄变化：20~25 岁约 20~22%，35 岁 14%，40 岁 8%，"

@@ -17,6 +17,7 @@ _selftest/
 release/
 dist/
 build_exe/
+build/
 *.spec
 
 # 编辑器
