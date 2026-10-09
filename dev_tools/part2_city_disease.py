@@ -97,7 +97,7 @@ CITIES = {
             3: {"cold_wave": 10, "rain": 10, "haze": 10, "blizzard": 2, "heat_wave": 0, "heatstroke": 0},
             4: {"cold_wave": 26, "blizzard": 18, "haze": 12, "rain": 2, "heat_wave": 0, "heatstroke": 0},
         },
-        "disease_weights": {"cold": 20, "gastro": 8, "pneumonia": 10, "chronic": 10, "frostbite": 12, "heatstroke": 1},
+        "disease_weights": {"cold": 20, "flu": 16, "tonsillitis": 12, "bronchitis": 10, "pneumonia": 10, "asthma": 6, "rhinitis": 4, "gastro": 8, "food_poisoning": 6, "gastritis": 6, "hypertension": 8, "heart_disease": 6, "diabetes": 6, "gout": 5, "migraine": 6, "insomnia": 5, "frostbite": 12, "burns": 4, "fracture": 5, "sprain": 6, "dental": 5, "dermatitis": 4, "depression": 4, "anxiety": 4, "heatstroke": 1},
     },
     "beijing": {
         "name": "北京",
@@ -113,7 +113,7 @@ CITIES = {
             3: {"haze": 14, "rain": 10, "cold_wave": 6, "sandstorm": 4, "heat_wave": 0, "heatstroke": 0},
             4: {"cold_wave": 16, "haze": 16, "blizzard": 8, "sandstorm": 4, "rain": 2, "heat_wave": 0},
         },
-        "disease_weights": {"cold": 18, "gastro": 12, "pneumonia": 10, "chronic": 12, "frostbite": 6, "heatstroke": 3},
+        "disease_weights": {"cold": 18, "flu": 16, "tonsillitis": 10, "bronchitis": 12, "pneumonia": 10, "asthma": 8, "rhinitis": 8, "gastro": 12, "food_poisoning": 8, "gastritis": 8, "hypertension": 10, "heart_disease": 8, "diabetes": 8, "gout": 6, "migraine": 8, "insomnia": 7, "frostbite": 6, "burns": 4, "fracture": 5, "sprain": 6, "dental": 6, "dermatitis": 5, "depression": 5, "anxiety": 5, "heatstroke": 3},
     },
     "shanghai": {
         "name": "上海",
@@ -129,7 +129,7 @@ CITIES = {
             3: {"rain": 10, "haze": 8, "cold_wave": 4, "heat_wave": 0, "heatstroke": 0},
             4: {"cold_wave": 10, "rain": 12, "haze": 10, "heat_wave": 0, "heatstroke": 0},
         },
-        "disease_weights": {"cold": 16, "gastro": 18, "pneumonia": 8, "chronic": 8, "frostbite": 2, "heatstroke": 8},
+        "disease_weights": {"cold": 16, "flu": 14, "tonsillitis": 10, "bronchitis": 10, "pneumonia": 8, "asthma": 8, "rhinitis": 10, "gastro": 18, "food_poisoning": 12, "gastritis": 10, "hypertension": 9, "heart_disease": 6, "diabetes": 7, "gout": 6, "migraine": 8, "insomnia": 8, "frostbite": 2, "burns": 4, "fracture": 5, "sprain": 7, "dental": 6, "dermatitis": 7, "depression": 5, "anxiety": 5, "heatstroke": 8},
     },
     "guangzhou": {
         "name": "广州",
@@ -145,7 +145,7 @@ CITIES = {
             3: {"heat_wave": 8, "heatstroke": 8, "rain": 10, "haze": 8},
             4: {"heat_wave": 6, "heatstroke": 6, "cold_wave": 3, "rain": 6, "haze": 6},
         },
-        "disease_weights": {"cold": 12, "gastro": 16, "pneumonia": 6, "chronic": 6, "frostbite": 1, "heatstroke": 16},
+        "disease_weights": {"cold": 12, "flu": 12, "tonsillitis": 10, "bronchitis": 8, "pneumonia": 6, "asthma": 7, "rhinitis": 10, "gastro": 16, "food_poisoning": 12, "gastritis": 9, "hypertension": 8, "heart_disease": 5, "diabetes": 7, "gout": 7, "migraine": 7, "insomnia": 7, "frostbite": 1, "burns": 5, "fracture": 4, "sprain": 7, "dental": 6, "dermatitis": 8, "depression": 4, "anxiety": 4, "heatstroke": 16},
     },
 }
 
@@ -266,59 +266,314 @@ def temperature_adjust(dice, player):
 # ==============================================================================
 # 字段说明：
 #   name / kind / desc : 名称、类型、描述
-#   days               : (最短, 最长) 持续天数
-#   hp_per_day         : 每日健康扣除
+#   days               : (最短, 最长) 严重程度（1~5，用于判定"是否更严重"）
+#   hp_per_day         : 每日健康扣除（已按"现实病程 + 游戏可玩性"标定）
 #   happy_per_day      : 每日幸福扣除
 #   cure_cost          : 彻底治愈费用
 #   self_heal          : 每日自愈概率（0 表示不会自愈，只能花钱）
 #   temp_mod           : 每日体温累积影响（发烧为正、冻伤为负）
 #   needs_cure         : True 表示必须花钱治疗，否则一直持续（慢性病）
 #   fatal              : True 表示危重疾病，健康过低时可能直接致死
+#   severity           : 1~5 严重度（替代旧的 DISEASE_SEVERITY 表）
+#   scope              : 适用人群（all/child/adult/elder）——影响抽病权重
+#   contagion          : 传染性（1~3），影响季节/人群聚集时的权重
+#   tags               : 附加标签（fever 发热 / chill 失温 / chronic 慢性 / injury 外伤）
 # ==============================================================================
 
 DISEASES = {
+    # ---------------- 呼吸道 ----------------
     "cold": {
-        "id": "cold", "name": "感冒", "kind": "轻症",
-        "desc": "一场小感冒，鼻塞头痛，休息几天大多能好。",
-        "days": (2, 5), "hp_per_day": 2, "happy_per_day": 2,
-        "cure_cost": 80.0, "self_heal": 0.55, "temp_mod": 0.12,
+        "id": "cold", "name": "普通感冒", "kind": "轻症",
+        "desc": "鼻塞、流涕、打喷嚏，通常一周左右自愈。",
+        "days": (2, 6), "hp_per_day": 1.6, "happy_per_day": 2,
+        "cure_cost": 80.0, "self_heal": 0.55, "temp_mod": 0.10,
+        "severity": 1, "scope": "all", "contagion": 2, "tags": ["fever"],
     },
-    "gastro": {
-        "id": "gastro", "name": "肠胃炎", "kind": "中症",
-        "desc": "上吐下泻，浑身发软，吃点药能缓解，但拖久了伤身。",
-        "days": (3, 8), "hp_per_day": 3, "happy_per_day": 3,
-        "cure_cost": 320.0, "self_heal": 0.30, "temp_mod": 0.08,
+    "flu": {
+        "id": "flu", "name": "流行性感冒", "kind": "中症",
+        "desc": "高热、全身酸痛，比普通感冒重得多，容易并发肺炎。",
+        "days": (4, 10), "hp_per_day": 2.6, "happy_per_day": 3,
+        "cure_cost": 260.0, "self_heal": 0.35, "temp_mod": 0.22,
+        "severity": 2, "scope": "all", "contagion": 3, "tags": ["fever"],
+    },
+    "tonsillitis": {
+        "id": "tonsillitis", "name": "扁桃体炎", "kind": "中症",
+        "desc": "咽喉肿痛、吞咽困难，儿童和青少年尤其常见。",
+        "days": (3, 8), "hp_per_day": 2.2, "happy_per_day": 2,
+        "cure_cost": 220.0, "self_heal": 0.35, "temp_mod": 0.18,
+        "severity": 2, "scope": "child", "contagion": 1, "tags": ["fever"],
+    },
+    "bronchitis": {
+        "id": "bronchitis", "name": "支气管炎", "kind": "中症",
+        "desc": "咳嗽不止、痰多胸闷，抽烟或空气差的人更容易得。",
+        "days": (5, 12), "hp_per_day": 2.8, "happy_per_day": 3,
+        "cure_cost": 420.0, "self_heal": 0.25, "temp_mod": 0.15,
+        "severity": 3, "scope": "all", "contagion": 1, "tags": ["fever"],
     },
     "pneumonia": {
         "id": "pneumonia", "name": "肺炎", "kind": "重症",
-        "desc": "高烧不退、咳嗽胸痛，必须住院治疗，否则非常危险。",
-        "days": (7, 16), "hp_per_day": 6, "happy_per_day": 5,
-        "cure_cost": 2600.0, "self_heal": 0.05, "temp_mod": 0.32, "fatal": True,
+        "desc": "高烧不退、呼吸带杂音，必须住院治疗，否则非常危险。",
+        "days": (7, 18), "hp_per_day": 4.2, "happy_per_day": 5,
+        "cure_cost": 2600.0, "self_heal": 0.05, "temp_mod": 0.30,
+        "severity": 5, "scope": "all", "contagion": 1, "tags": ["fever"], "fatal": True,
     },
-    "chronic": {
-        "id": "chronic", "name": "慢性病", "kind": "顽疾",
-        "desc": "需要长期吃药控制的慢性疾病，不治会一直拖累身体。",
-        "days": (20, 40), "hp_per_day": 1.5, "happy_per_day": 2,
-        "cure_cost": 1800.0, "self_heal": 0.0, "temp_mod": 0.02,
+    "asthma": {
+        "id": "asthma", "name": "哮喘发作", "kind": "顽疾",
+        "desc": "气道痉挛、喘不上气，换季或雾霾天特别容易发作。",
+        "days": (2, 6), "hp_per_day": 3.0, "happy_per_day": 4,
+        "cure_cost": 480.0, "self_heal": 0.45, "temp_mod": 0.05,
+        "severity": 3, "scope": "all", "contagion": 0, "tags": ["chronic"],
+    },
+    "rhinitis": {
+        "id": "rhinitis", "name": "过敏性鼻炎", "kind": "轻症",
+        "desc": "喷嚏不断、鼻子发痒，春天和雾霾天最难受。",
+        "days": (4, 12), "hp_per_day": 0.8, "happy_per_day": 2,
+        "cure_cost": 180.0, "self_heal": 0.45, "temp_mod": 0.0,
+        "severity": 1, "scope": "all", "contagion": 0, "tags": ["chronic"],
+    },
+    # ---------------- 消化道 ----------------
+    "gastro": {
+        "id": "gastro", "name": "急性肠胃炎", "kind": "中症",
+        "desc": "上吐下泻、浑身发软，多因吃坏东西引起。",
+        "days": (3, 8), "hp_per_day": 2.4, "happy_per_day": 3,
+        "cure_cost": 320.0, "self_heal": 0.30, "temp_mod": 0.08,
+        "severity": 2, "scope": "all", "contagion": 2, "tags": [],
+    },
+    "food_poisoning": {
+        "id": "food_poisoning", "name": "食物中毒", "kind": "中症",
+        "desc": "剧烈腹痛、反复呕吐，需要尽快补液。",
+        "days": (2, 5), "hp_per_day": 3.2, "happy_per_day": 4,
+        "cure_cost": 400.0, "self_heal": 0.35, "temp_mod": 0.12,
+        "severity": 3, "scope": "all", "contagion": 0, "tags": ["fever"],
+    },
+    "gastritis": {
+        "id": "gastritis", "name": "慢性胃炎", "kind": "顽疾",
+        "desc": "胃部隐痛、反酸胀气，饮食不规律的人容易拖成老毛病。",
+        "days": (15, 40), "hp_per_day": 0.9, "happy_per_day": 2,
+        "cure_cost": 900.0, "self_heal": 0.10, "temp_mod": 0.0,
+        "severity": 3, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+    },
+    "appendicitis": {
+        "id": "appendicitis", "name": "阑尾炎", "kind": "急症",
+        "desc": "右下腹剧痛、按下去更疼，必须马上手术。",
+        "days": (5, 12), "hp_per_day": 4.5, "happy_per_day": 5,
+        "cure_cost": 3800.0, "self_heal": 0.02, "temp_mod": 0.25,
+        "severity": 5, "scope": "all", "contagion": 0, "tags": ["fever"], "fatal": True,
+    },
+    "hemorrhoids": {
+        "id": "hemorrhoids", "name": "痔疮", "kind": "轻症",
+        "desc": "久坐、便秘之后的老毛病，坐立不安。",
+        "days": (5, 15), "hp_per_day": 0.7, "happy_per_day": 2,
+        "cure_cost": 600.0, "self_heal": 0.35, "temp_mod": 0.0,
+        "severity": 2, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+    },
+    # ---------------- 心血管 / 代谢 ----------------
+    "hypertension": {
+        "id": "hypertension", "name": "高血压", "kind": "慢性病",
+        "desc": "头晕、后颈发紧，需要长期吃药控制，否则伤及心脑。",
+        "days": (25, 60), "hp_per_day": 1.1, "happy_per_day": 2,
+        "cure_cost": 1600.0, "self_heal": 0.0, "temp_mod": 0.02,
+        "severity": 4, "scope": "elder", "contagion": 0, "tags": ["chronic"],
         "needs_cure": True,
+    },
+    "heart_disease": {
+        "id": "heart_disease", "name": "冠心病", "kind": "重症",
+        "desc": "胸闷、心悸，情绪激动或劳累时可能急性发作。",
+        "days": (20, 50), "hp_per_day": 1.8, "happy_per_day": 3,
+        "cure_cost": 12000.0, "self_heal": 0.0, "temp_mod": 0.0,
+        "severity": 5, "scope": "elder", "contagion": 0, "tags": ["chronic"],
+        "needs_cure": True, "fatal": True,
+    },
+    "diabetes": {
+        "id": "diabetes", "name": "糖尿病", "kind": "慢性病",
+        "desc": "口渴、多尿、体重下降，需要长期控糖与忌口。",
+        "days": (30, 70), "hp_per_day": 1.0, "happy_per_day": 3,
+        "cure_cost": 2400.0, "self_heal": 0.0, "temp_mod": 0.0,
+        "severity": 4, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+        "needs_cure": True,
+    },
+    "hyperlipidemia": {
+        "id": "hyperlipidemia", "name": "高血脂", "kind": "慢性病",
+        "desc": "体检报告上的常客，控制饮食就能缓解。",
+        "days": (20, 50), "hp_per_day": 0.6, "happy_per_day": 1,
+        "cure_cost": 1200.0, "self_heal": 0.05, "temp_mod": 0.0,
+        "severity": 3, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+    },
+    "gout": {
+        "id": "gout", "name": "痛风", "kind": "顽疾",
+        "desc": "关节红肿剧痛，半夜能把人疼醒，海鲜啤酒是元凶。",
+        "days": (4, 14), "hp_per_day": 2.4, "happy_per_day": 4,
+        "cure_cost": 800.0, "self_heal": 0.20, "temp_mod": 0.05,
+        "severity": 3, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+    },
+    "anemia": {
+        "id": "anemia", "name": "贫血", "kind": "慢性病",
+        "desc": "脸色苍白、容易头晕乏力，女性与偏食者更常见。",
+        "days": (10, 30), "hp_per_day": 0.9, "happy_per_day": 2,
+        "cure_cost": 700.0, "self_heal": 0.25, "temp_mod": 0.0,
+        "severity": 2, "scope": "all", "contagion": 0, "tags": ["chronic"],
+    },
+    # ---------------- 感染 / 其他内科 ----------------
+    "urinary_infection": {
+        "id": "urinary_infection", "name": "尿路感染", "kind": "中症",
+        "desc": "尿急尿痛、小腹坠胀，需要多喝水并尽快用药。",
+        "days": (3, 9), "hp_per_day": 2.0, "happy_per_day": 4,
+        "cure_cost": 300.0, "self_heal": 0.25, "temp_mod": 0.15,
+        "severity": 2, "scope": "all", "contagion": 0, "tags": ["fever"],
+    },
+    "kidney_stone": {
+        "id": "kidney_stone", "name": "肾结石", "kind": "急症",
+        "desc": "腰部绞痛，疼起来直不起身，严重时需要碎石。",
+        "days": (5, 15), "hp_per_day": 3.6, "happy_per_day": 5,
+        "cure_cost": 4200.0, "self_heal": 0.10, "temp_mod": 0.05,
+        "severity": 4, "scope": "adult", "contagion": 0, "tags": [],
+    },
+    "thyroid": {
+        "id": "thyroid", "name": "甲状腺疾病", "kind": "慢性病",
+        "desc": "心慌、怕冷或怕热、体重异常，需要长期服药。",
+        "days": (25, 60), "hp_per_day": 0.8, "happy_per_day": 2,
+        "cure_cost": 1800.0, "self_heal": 0.0, "temp_mod": 0.03,
+        "severity": 3, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+        "needs_cure": True,
+    },
+    "liver_disease": {
+        "id": "liver_disease", "name": "脂肪肝 / 肝功能异常", "kind": "慢性病",
+        "desc": "体检提示肝酶升高，多半是熬夜和饮食造成的。",
+        "days": (20, 50), "hp_per_day": 0.9, "happy_per_day": 2,
+        "cure_cost": 2000.0, "self_heal": 0.10, "temp_mod": 0.0,
+        "severity": 3, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+    },
+    "migraine": {
+        "id": "migraine", "name": "偏头痛", "kind": "顽疾",
+        "desc": "一侧头痛、怕光怕吵，压力大时发作频繁。",
+        "days": (2, 7), "hp_per_day": 1.4, "happy_per_day": 4,
+        "cure_cost": 260.0, "self_heal": 0.45, "temp_mod": 0.0,
+        "severity": 2, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+    },
+    "insomnia": {
+        "id": "insomnia", "name": "失眠症", "kind": "轻症",
+        "desc": "躺下两小时还睡不着，白天精神恍惚。",
+        "days": (5, 20), "hp_per_day": 0.8, "happy_per_day": 3,
+        "cure_cost": 400.0, "self_heal": 0.40, "temp_mod": 0.0,
+        "severity": 2, "scope": "adult", "contagion": 0, "tags": [],
+    },
+    # ---------------- 外科 / 外伤 ----------------
+    "fracture": {
+        "id": "fracture", "name": "骨折", "kind": "外伤",
+        "desc": "骨头断了，需要打石膏静养很长一段时间。",
+        "days": (20, 45), "hp_per_day": 2.0, "happy_per_day": 3,
+        "cure_cost": 3000.0, "self_heal": 0.05, "temp_mod": 0.05,
+        "severity": 4, "scope": "all", "contagion": 0, "tags": ["injury"],
+    },
+    "sprain": {
+        "id": "sprain", "name": "扭伤", "kind": "外伤",
+        "desc": "脚踝或手腕扭伤，肿得像个馒头。",
+        "days": (5, 14), "hp_per_day": 1.2, "happy_per_day": 2,
+        "cure_cost": 300.0, "self_heal": 0.40, "temp_mod": 0.0,
+        "severity": 2, "scope": "all", "contagion": 0, "tags": ["injury"],
+    },
+    "burns": {
+        "id": "burns", "name": "烫伤 / 烧伤", "kind": "外伤",
+        "desc": "皮肤红肿起泡，处理不当会留疤甚至感染。",
+        "days": (4, 12), "hp_per_day": 2.6, "happy_per_day": 3,
+        "cure_cost": 1200.0, "self_heal": 0.20, "temp_mod": 0.10,
+        "severity": 3, "scope": "all", "contagion": 0, "tags": ["injury"],
     },
     "frostbite": {
         "id": "frostbite", "name": "冻伤", "kind": "外伤",
         "desc": "手脚冻得失去知觉，严重时皮肤发黑，必须尽快处理。",
-        "days": (3, 9), "hp_per_day": 3.5, "happy_per_day": 3,
+        "days": (3, 9), "hp_per_day": 2.2, "happy_per_day": 3,
         "cure_cost": 260.0, "self_heal": 0.25, "temp_mod": -0.30,
+        "severity": 2, "scope": "all", "contagion": 0, "tags": ["chill", "injury"],
     },
     "heatstroke": {
         "id": "heatstroke", "name": "中暑", "kind": "急症",
         "desc": "头晕恶心、体温飙升，需要马上降温补水。",
-        "days": (2, 6), "hp_per_day": 4, "happy_per_day": 4,
+        "days": (2, 6), "hp_per_day": 3.0, "happy_per_day": 4,
         "cure_cost": 300.0, "self_heal": 0.35, "temp_mod": 0.35,
+        "severity": 2, "scope": "all", "contagion": 0, "tags": ["fever"],
+    },
+    # ---------------- 皮肤 / 口腔 / 眼耳 ----------------
+    "dermatitis": {
+        "id": "dermatitis", "name": "皮炎 / 湿疹", "kind": "轻症",
+        "desc": "皮肤发红发痒，越挠越难受。",
+        "days": (5, 20), "hp_per_day": 0.6, "happy_per_day": 3,
+        "cure_cost": 350.0, "self_heal": 0.30, "temp_mod": 0.0,
+        "severity": 1, "scope": "all", "contagion": 0, "tags": ["chronic"],
+    },
+    "dental": {
+        "id": "dental", "name": "牙痛 / 龋齿", "kind": "轻症",
+        "desc": "牙疼不是病，疼起来真要命，补牙还要花不少钱。",
+        "days": (3, 10), "hp_per_day": 1.2, "happy_per_day": 4,
+        "cure_cost": 900.0, "self_heal": 0.25, "temp_mod": 0.0,
+        "severity": 2, "scope": "all", "contagion": 0, "tags": [],
+    },
+    "conjunctivitis": {
+        "id": "conjunctivitis", "name": "结膜炎", "kind": "轻症",
+        "desc": "眼睛红痒、分泌物增多，传染性很强。",
+        "days": (3, 8), "hp_per_day": 0.9, "happy_per_day": 3,
+        "cure_cost": 200.0, "self_heal": 0.45, "temp_mod": 0.05,
+        "severity": 1, "scope": "all", "contagion": 2, "tags": [],
+    },
+    "otitis": {
+        "id": "otitis", "name": "中耳炎", "kind": "中症",
+        "desc": "耳朵闷痛、听力下降，小孩子尤其容易得。",
+        "days": (4, 10), "hp_per_day": 1.8, "happy_per_day": 3,
+        "cure_cost": 400.0, "self_heal": 0.35, "temp_mod": 0.15,
+        "severity": 2, "scope": "child", "contagion": 1, "tags": ["fever"],
+    },
+    "hemorrhagic_fever": {
+        "id": "hemorrhagic_fever", "name": "重症感染", "kind": "危重症",
+        "desc": "高热、寒战、意识模糊，必须立刻住院抢救。",
+        "days": (8, 20), "hp_per_day": 5.0, "happy_per_day": 6,
+        "cure_cost": 20000.0, "self_heal": 0.02, "temp_mod": 0.45,
+        "severity": 5, "scope": "all", "contagion": 2, "tags": ["fever"],
+        "fatal": True,
+    },
+    # ---------------- 心理健康（现实中最常见的"病"之一）----------------
+    "depression": {
+        "id": "depression", "name": "抑郁症", "kind": "心理疾病",
+        "desc": "提不起劲、对什么都失去兴趣，需要长期疏导与治疗。",
+        "days": (30, 90), "hp_per_day": 1.0, "happy_per_day": 5,
+        "cure_cost": 3000.0, "self_heal": 0.02, "temp_mod": 0.0,
+        "severity": 4, "scope": "all", "contagion": 0, "tags": ["mental"],
+        "needs_cure": True,
+    },
+    "anxiety": {
+        "id": "anxiety", "name": "焦虑症", "kind": "心理疾病",
+        "desc": "心慌、手抖、总是担心最坏的结果。",
+        "days": (15, 45), "hp_per_day": 0.8, "happy_per_day": 4,
+        "cure_cost": 1500.0, "self_heal": 0.10, "temp_mod": 0.0,
+        "severity": 3, "scope": "all", "contagion": 0, "tags": ["mental"],
     },
 }
 
-#: 疾病严重度排序（用于判断"是否更严重"，避免小病覆盖大病）
-DISEASE_SEVERITY = {"cold": 1, "frostbite": 2, "heatstroke": 2, "gastro": 3,
-                    "chronic": 4, "pneumonia": 5}
+#: 疾病严重度（由 severity 字段生成，保留旧接口名）
+DISEASE_SEVERITY = {k: v.get("severity", 2) for k, v in DISEASES.items()}
+
+#: 常见疾病总览（供帮助面板展示）
+COMMON_DISEASE_KEYS = [
+    "cold", "flu", "tonsillitis", "bronchitis", "pneumonia", "asthma", "rhinitis",
+    "gastro", "food_poisoning", "gastritis", "appendicitis", "hemorrhoids",
+    "hypertension", "heart_disease", "diabetes", "hyperlipidemia", "gout", "anemia",
+    "urinary_infection", "kidney_stone", "thyroid", "liver_disease",
+    "migraine", "insomnia", "fracture", "sprain", "burns", "frostbite", "heatstroke",
+    "dermatitis", "dental", "conjunctivitis", "otitis", "hemorrhagic_fever",
+    "depression", "anxiety",
+]
+
+#: 疾病分类（用于界面分组展示）
+DISEASE_GROUPS = [
+    ("呼吸道", ["cold", "flu", "tonsillitis", "bronchitis", "pneumonia", "asthma", "rhinitis"]),
+    ("消化道", ["gastro", "food_poisoning", "gastritis", "appendicitis", "hemorrhoids"]),
+    ("心血管/代谢", ["hypertension", "heart_disease", "diabetes", "hyperlipidemia",
+                     "gout", "anemia", "thyroid", "liver_disease"]),
+    ("感染与其他内科", ["urinary_infection", "kidney_stone", "migraine", "insomnia",
+                        "hemorrhagic_fever"]),
+    ("外伤/环境", ["fracture", "sprain", "burns", "frostbite", "heatstroke"]),
+    ("皮肤/口腔/眼耳", ["dermatitis", "dental", "conjunctivitis", "otitis"]),
+    ("心理", ["depression", "anxiety"]),
+]
 
 #: 患病概率的年龄系数（U 型曲线：婴幼儿偏高 -> 青少年最低 -> 老年快速升高）
 #: 已按"各年龄段事件暴露量不同"做过实验修正，使实际患病频率呈标准 U 型
@@ -436,15 +691,40 @@ def illness_gap_ok(player, min_gap=None):
     return (getattr(player, "total_days", 0) - last) >= min_gap
 
 
-def disease_table_text():
-    """疾病速查表文本（用于帮助面板）。"""
+def disease_table_text(full=False):
+    """
+    疾病速查表文本（用于帮助面板）。
+    full=False 时只列出常见病摘要；full=True 时按分类列出全部疾病。
+    """
+    if not full:
+        lines = ["  共收录 %d 种常见疾病，按分类如下：" % len(COMMON_DISEASE_KEYS)]
+        for group_name, keys in DISEASE_GROUPS:
+            names = "、".join(DISEASES[k]["name"] for k in keys if k in DISEASES)
+            lines.append("  · %s（%d 种）：%s" % (group_name, len(keys), names))
+        lines.append("")
+        lines.append("  示例（每日健康/幸福扣除、治愈费、自愈率）：")
+        for key in ("cold", "flu", "gastro", "pneumonia", "appendicitis",
+                    "hypertension", "depression", "fracture"):
+            d = DISEASES[key]
+            lines.append("    - %s（%s）：健康 -%.1f / 幸福 -%d，治愈 %.0f，自愈 %s%s" % (
+                d["name"], d["kind"], d["hp_per_day"], d["happy_per_day"], d["cure_cost"],
+                pct_text(d["self_heal"]) if d["self_heal"] > 0 else "无（需治疗）",
+                "，危重" if d.get("fatal") else ""))
+        return "\n".join(lines)
     lines = []
-    for key in ("cold", "gastro", "pneumonia", "chronic", "frostbite", "heatstroke"):
-        d = DISEASES[key]
-        lines.append("  · %s（%s）：每日健康 -%d / 幸福 -%d，治愈费 %.0f，自愈率 %s%s" % (
-            d["name"], d["kind"], d["hp_per_day"], d["happy_per_day"], d["cure_cost"],
-            pct_text(d["self_heal"]) if d["self_heal"] > 0 else "无（必须治疗）",
-            "，危重" if d.get("fatal") else ""))
+    for group_name, keys in DISEASE_GROUPS:
+        lines.append("【%s】" % group_name)
+        for key in keys:
+            d = DISEASES.get(key)
+            if not d:
+                continue
+            days_txt = "%d~%d 天" % d["days"]
+            lines.append("  · %-14s %-6s 病程 %-10s 健康 -%.1f/天  幸福 -%d/天  治愈 %-8.0f 自愈 %-6s%s" % (
+                d["name"], d["kind"], days_txt, d["hp_per_day"], d["happy_per_day"],
+                d["cure_cost"],
+                pct_text(d["self_heal"]) if d["self_heal"] > 0 else "无",
+                "  危重" if d.get("fatal") else ("  需长期治疗" if d.get("needs_cure") else "")))
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -456,7 +736,7 @@ def make_disease(dice, disease_id, hp_scale=1.0, days_bonus=0, temp_scale=1.0):
     """
     base = DISEASES.get(disease_id) or DISEASES["cold"]
     lo, hi = base["days"]
-    # 用 d4/d6 决定持续天数，兼顾随机与均衡
+    # 用骰子决定持续天数，兼顾随机与均衡
     span = max(1, hi - lo + 1)
     res = dice.roll(span if span in DICE_FACES else 6, 1, 0, "病程天数")
     days = lo + (res.value - 1) % span + days_bonus
@@ -474,50 +754,116 @@ def make_disease(dice, disease_id, hp_scale=1.0, days_bonus=0, temp_scale=1.0):
         "temp_mod": round(base["temp_mod"] * temp_scale, 3),
         "needs_cure": base.get("needs_cure", False),
         "fatal": base.get("fatal", False),
+        "severity": base.get("severity", 2),
+        "desc": base.get("desc", ""),
+        "tags": list(base.get("tags", [])),
         "days_roll": res.to_dict(),
     }
 
 
+#: 疾病抽签的"人群适用性"倍率（scope 字段 + 年龄）
+def _scope_modifier(player, disease):
+    """
+    某些病只在特定人群高发（例如幼儿中耳炎、老人冠心病），
+    用倍率模拟真实人群分布；不适用时给一个很低但非零的权重。
+    """
+    scope = disease.get("scope", "all")
+    age = getattr(player, "age", 30)
+    if scope == "all":
+        return 1.0
+    if scope == "child":
+        if age <= 3:
+            return 2.0
+        if age <= 12:
+            return 1.8
+        if age <= 18:
+            return 1.0
+        if age <= 40:
+            return 0.25
+        return 0.08
+    if scope == "adult":
+        if age < 16:
+            return 0.06
+        if age <= 60:
+            return 1.0
+        return 1.2
+    if scope == "elder":
+        if age < 45:
+            return 0.05
+        if age < 60:
+            return 0.4
+        if age < 75:
+            return 1.3
+        return 2.0
+    return 1.0
+
+
 def disease_weight_for(player, disease_id):
     """
-    计算某种疾病相对易感程度：城市气候 + 季节 + 年龄 + 当前体温。
+    计算某种疾病相对易感程度：
+        城市气候 + 季节 + 年龄人群 + 体质 + 当前体温 + 健康状态。
+    疾病种类扩展到 30+ 种后，这里统一用"标签 + scope"驱动，避免逐病硬编码。
     """
+    disease = DISEASES.get(disease_id) or DISEASES["cold"]
     city = get_city(player.city)
     base = float(city["disease_weights"].get(disease_id, 5))
+    tags = set(disease.get("tags") or [])
     season = season_of_month(player.month)
-    # 季节修正
-    season_mod = {
-        "cold": {1: 1.2, 2: 0.7, 3: 1.3, 4: 1.8},
-        "pneumonia": {1: 1.1, 2: 0.6, 3: 1.2, 4: 1.8},
-        "gastro": {1: 1.0, 2: 1.6, 3: 1.1, 4: 0.8},
-        "chronic": {1: 1.0, 2: 1.0, 3: 1.0, 4: 1.1},
-        "frostbite": {1: 0.6, 2: 0.0, 3: 0.8, 4: 2.4},
-        "heatstroke": {1: 0.5, 2: 2.4, 3: 0.8, 4: 0.0},
-    }.get(disease_id, {}).get(season, 1.0)
+    contagion = float(disease.get("contagion", 0) or 0)
+
+    # ---- 季节修正 ----
+    season_mod = 1.0
+    if "fever" in tags or contagion >= 2:
+        # 呼吸道/传染病：冬春高发
+        season_mod *= {1: 1.25, 2: 0.7, 3: 1.3, 4: 1.8}.get(season, 1.0)
+    if "chill" in tags:
+        season_mod *= {1: 0.6, 2: 0.0, 3: 0.8, 4: 2.4}.get(season, 1.0)
+    if disease_id == "heatstroke" or "heat" in tags:
+        season_mod *= {1: 0.4, 2: 2.4, 3: 0.7, 4: 0.0}.get(season, 1.0)
+    if disease_id in ("gastro", "food_poisoning"):
+        # 夏季食物易变质
+        season_mod *= {1: 1.0, 2: 1.7, 3: 1.1, 4: 0.8}.get(season, 1.0)
+    if "injury" in tags:
+        season_mod *= {1: 1.1, 2: 1.15, 3: 1.05, 4: 1.15}.get(season, 1.0)
+    if "mental" in tags:
+        # 换季与冬季情绪问题更多
+        season_mod *= {1: 1.1, 2: 1.0, 3: 1.05, 4: 1.2}.get(season, 1.0)
     base *= season_mod
 
-    # 年龄修正：老人小孩更易重症
-    age = player.age
-    if age <= 6:
-        age_mod = 1.35 if disease_id in ("cold", "pneumonia", "gastro") else 1.1
-    elif age >= 60:
-        age_mod = 1.6 if disease_id in ("pneumonia", "chronic", "cold") else 1.3
-    elif age >= 45:
-        age_mod = 1.25 if disease_id in ("chronic", "pneumonia") else 1.05
-    else:
-        age_mod = 1.0
-    base *= age_mod
+    # ---- 人群适用性（年龄）----
+    base *= _scope_modifier(player, disease)
 
-    # 体温异常修正
-    if player.temp >= 38.0 and disease_id in ("pneumonia", "cold", "heatstroke"):
+    # ---- 年龄修正：老人更易重症/慢性病，幼儿更易感染 ----
+    age = player.age
+    severity = disease.get("severity", 2)
+    if age <= 6:
+        if "fever" in tags or contagion >= 1:
+            base *= 1.35
+        if "chronic" in tags or severity >= 4:
+            base *= 0.2
+    elif age >= 60:
+        if "chronic" in tags or severity >= 4:
+            base *= 1.7
+        if "fever" in tags:
+            base *= 1.4
+    elif age >= 45:
+        if "chronic" in tags or severity >= 4:
+            base *= 1.3
+
+    # ---- 体温异常 ----
+    if player.temp >= 38.0 and ("fever" in tags or severity >= 4):
         base *= 1.35
-    if player.temp <= 35.2 and disease_id in ("frostbite", "cold", "pneumonia"):
+    if player.temp <= 35.2 and ("chill" in tags or "fever" in tags):
         base *= 1.45
 
-    # 健康低时更容易病倒
+    # ---- 体质影响易感程度（体质越好，重病概率越低）----
+    sus = constitution_susceptibility(getattr(player, "constitution", CONSTITUTION_MEAN))
+    base *= (0.6 + 0.5 * sus)
+
+    # ---- 健康低时更容易病倒 ----
     if player.health <= 40:
         base *= 1.3
-    return max(0.5, base)
+    return max(0.4, base)
 
 
 def roll_disease(dice, player, hp_scale=1.0, forced_id=None):

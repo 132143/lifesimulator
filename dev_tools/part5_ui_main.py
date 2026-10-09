@@ -4,26 +4,27 @@
 # 13. Tkinter 界面层
 # ==============================================================================
 
-#: 深色主题配色
+#: 极简配色：黑底白字 / 白底黑字 + 橙色作为唯一强调色
 COLORS = {
-    "bg": "#12151a",
-    "panel": "#1b2028",
-    "panel2": "#232a34",
-    "border": "#333c4a",
-    "text": "#e6e9ef",
-    "dim": "#9aa4b2",
-    "accent": "#4da3ff",
-    "good": "#4ad07a",
-    "bad": "#ff6b6b",
-    "warn": "#f0c040",
-    "secret": "#b98cff",
-    "gold": "#ffd166",
+    "bg": "#000000",          # 主背景：纯黑
+    "panel": "#0d0d0d",       # 面板底色（接近黑）
+    "panel2": "#ffffff",      # 反色面板：纯白
+    "border": "#4a4a4a",      # 边框：中性灰
+    "text": "#ffffff",        # 主文字：纯白
+    "dim": "#a8a8a8",         # 次要文字：浅灰
+    "accent": "#ff8c00",      # 强调色：橙色（唯一彩色）
+    "good": "#ff8c00",        # 正向提示也用橙色（保持单色系统）
+    "bad": "#ff8c00",         # 负向提示同样用橙色，靠文字区分
+    "warn": "#ff8c00",
+    "secret": "#ff8c00",
+    "gold": "#ff8c00",
+    "black": "#000000",
+    "white": "#ffffff",
 }
 
-FONT_CANDIDATES = ("Microsoft YaHei UI", "Microsoft YaHei", "微软雅黑",
-                   "PingFang SC", "Noto Sans CJK SC", "SimHei", "SimSun")
-MONO_CANDIDATES = ("Cascadia Mono", "Consolas", "Sarasa Mono SC",
-                   "Microsoft YaHei Mono", "Courier New")
+#: 字体优先使用宋体（中文点阵感强、简洁）
+FONT_CANDIDATES = ("SimSun", "宋体", "NSimSun", "新宋体", "SimSun-ExtB")
+MONO_CANDIDATES = ("NSimSun", "SimSun", "宋体", "Consolas", "Courier New")
 
 
 if tk is not None:
@@ -47,7 +48,7 @@ if tk is not None:
             header = tk.Frame(self, bg=self.colors["panel"])
             header.pack(fill="x")
             tk.Label(header, text=title, bg=self.colors["panel"], fg=self.colors["accent"],
-                     font=body_font or ("Microsoft YaHei UI", 14, "bold"),
+                     font=body_font or ("SimSun", 14, "bold"),
                      padx=16, pady=10, anchor="w").pack(fill="x")
 
             # 中部文本区（带滚动条）
@@ -56,7 +57,7 @@ if tk is not None:
             self.text = tk.Text(body, wrap="word", bg=self.colors["panel"],
                                 fg=self.colors["text"], relief="flat",
                                 insertbackground=self.colors["text"],
-                                font=body_font or ("Microsoft YaHei UI", 11),
+                                font=body_font or ("SimSun", 11),
                                 padx=14, pady=12, spacing1=2, spacing3=4,
                                 highlightthickness=1,
                                 highlightbackground=self.colors["border"])
@@ -108,18 +109,17 @@ if tk is not None:
             self.close()
 
         def _make_button(self, parent, label, key, command):
-            color = self.colors["accent"]
+            """极简按钮：确认/继续=橙底黑字；取消/退出=白底黑字。"""
             if key in ("cancel", "quit", "close"):
-                color = self.colors["border"]
-            elif key in ("restart",):
-                color = self.colors["gold"]
-            elif key == "danger":
-                color = self.colors["bad"]
-            btn = tk.Button(parent, text=label, bg=color, fg="#0d1117",
-                            activebackground=self.colors["accent"],
-                            activeforeground="#0d1117",
-                            relief="flat", font=("Microsoft YaHei UI", 11, "bold"),
-                            padx=18, pady=8, cursor="hand2",
+                bg, fg = self.colors["white"], self.colors["black"]
+                hbg, hfg = self.colors["accent"], self.colors["black"]
+            else:
+                bg, fg = self.colors["accent"], self.colors["black"]
+                hbg, hfg = self.colors["white"], self.colors["black"]
+            btn = tk.Button(parent, text=label, bg=bg, fg=fg,
+                            activebackground=hbg, activeforeground=hfg,
+                            relief="solid", bd=1, font=(FONT_CANDIDATES[0], 11),
+                            padx=16, pady=8, cursor="hand2",
                             command=lambda k=key: self._activate_by_key(k))
             btn.pack(side="right", padx=(8, 0), pady=(4, 0))
             return btn
@@ -201,7 +201,7 @@ if tk is not None:
             self.root.geometry("900x800")
             self.root.minsize(780, 680)
             self.root.configure(bg=COLORS["bg"])
-            self.font_family = self._pick_font(FONT_CANDIDATES, "Microsoft YaHei UI")
+            self.font_family = self._pick_font(FONT_CANDIDATES, "SimSun")
             self.mono_family = self._pick_font(MONO_CANDIDATES, "Consolas")
             self._build_styles()
             self._build_layout()
@@ -224,13 +224,14 @@ if tk is not None:
             return fallback
 
         def _build_styles(self):
-            self.f_title = (self.font_family, 16, "bold")
-            self.f_h2 = (self.font_family, 13, "bold")
+            """字体规格：全部使用宋体；只靠字号与粗细区分层级。"""
+            self.f_title = (self.font_family, 15, "bold")
+            self.f_h2 = (self.font_family, 12, "bold")
             self.f_body = (self.font_family, 11)
             self.f_small = (self.font_family, 10)
             self.f_mono = (self.mono_family, 10)
-            self.f_big = (self.font_family, 26, "bold")
-            self.f_btn = (self.font_family, 11, "bold")
+            self.f_big = (self.font_family, 24, "bold")
+            self.f_btn = (self.font_family, 11)
 
         def _build_layout(self):
             # 重要：底部区域（开局控件 / 游戏菜单）必须先用 side="bottom" 占位，
@@ -241,7 +242,7 @@ if tk is not None:
             # 顶部标题栏
             header = tk.Frame(self.root, bg=COLORS["panel"])
             header.pack(side="top", fill="x")
-            tk.Label(header, text="🎲 弹窗式文字人生模拟器", bg=COLORS["panel"],
+            tk.Label(header, text="弹窗式文字人生模拟器", bg=COLORS["panel"],
                      fg=COLORS["accent"], font=self.f_title, padx=16, pady=10,
                      anchor="w").pack(side="left")
             self.date_var = tk.StringVar(value="尚未开始")
@@ -252,8 +253,8 @@ if tk is not None:
             stats = tk.Frame(self.root, bg=COLORS["bg"])
             stats.pack(side="top", fill="x", padx=14, pady=(12, 6))
             self.stat_labels = {}
-            for col, (key, label) in enumerate((("health", "❤ 健康"), ("happy", "☺ 幸福"),
-                                                ("money", "¥ 金钱"), ("temp", "🌡 体温"))):
+            for col, (key, label) in enumerate((("health", "健康"), ("happy", "幸福"),
+                                                ("money", "金钱"), ("temp", "体温"))):
                 card = tk.Frame(stats, bg=COLORS["panel"], highlightthickness=1,
                                 highlightbackground=COLORS["border"])
                 card.grid(row=0, column=col, padx=6, pady=4, sticky="nsew")
@@ -282,6 +283,10 @@ if tk is not None:
             # 阶段 / 体质 / 家境 行
             self.stage_var = tk.StringVar(value="")
             tk.Label(info, textvariable=self.stage_var, bg=COLORS["bg"], fg=COLORS["gold"],
+                     font=self.f_small, anchor="w", justify="left").pack(fill="x")
+            # 家庭 / 生育状态行
+            self.family_var = tk.StringVar(value="")
+            tk.Label(info, textvariable=self.family_var, bg=COLORS["bg"], fg="#ff9ecb",
                      font=self.f_small, anchor="w", justify="left").pack(fill="x")
 
             # 中部信息区（滚动文本，占据剩余全部空间）
@@ -312,11 +317,11 @@ if tk is not None:
             # ---- 第一行：推进 / 跳过这一天 ----
             row0 = tk.Frame(footer, bg=COLORS["panel"])
             row0.pack(fill="x", padx=14, pady=(10, 2))
-            self.btn_roll = self._mk_button(row0, "▶ 推进一天（掷骰抽事件）", self.on_roll_day,
+            self.btn_roll = self._mk_button(row0, "推进一天（掷骰抽事件）", self.on_roll_day,
                                             color=COLORS["accent"], width=24)
             self.btn_roll.pack(side="left")
-            self.btn_skip_day = self._mk_button(row0, "⏭ 跳过这一天（什么也不做）",
-                                                self.on_skip_day, color=COLORS["panel2"],
+            self.btn_skip_day = self._mk_button(row0, "跳过这一天（什么也不做）",
+                                                self.on_skip_day, color=COLORS["white"],
                                                 width=24)
             self.btn_skip_day.pack(side="left", padx=(8, 0))
             self.ap_var = tk.StringVar(value="行动点 --/8")
@@ -327,10 +332,11 @@ if tk is not None:
             row1 = tk.Frame(footer, bg=COLORS["panel"])
             row1.pack(fill="x", padx=14, pady=(2, 2))
             self.action_buttons = {}
-            for key in ("rest", "work", "fun", "study", "social", "exercise"):
+            for key in ("rest", "work", "fun", "study", "social", "exercise",
+                        "intimacy", "parenting"):
                 btn = self._mk_button(row1, ACTION_LABELS[key],
                                       lambda k=key: self.on_action(k),
-                                      color=COLORS["panel2"], width=9)
+                                      color=COLORS["white"], width=9)
                 btn.pack(side="left", padx=(0, 6))
                 self.action_buttons[key] = btn
             self.btn_rest = self.action_buttons["rest"]
@@ -347,22 +353,22 @@ if tk is not None:
                      font=self.f_small).pack(side="left")
             self.skip_months_var = tk.StringVar(value="1")
             tk.Entry(row_skip, textvariable=self.skip_months_var, width=5,
-                     bg=COLORS["panel2"], fg=COLORS["text"], relief="flat",
+                     bg=COLORS["white"], fg=COLORS["black"], relief="flat",
                      insertbackground=COLORS["text"], font=self.f_small).pack(
                 side="left", padx=(4, 2), ipady=3)
             tk.Label(row_skip, text="个月", bg=COLORS["panel"], fg=COLORS["text"],
                      font=self.f_small).pack(side="left")
             self._mk_button(row_skip, "按月跳过", self.on_skip_months,
-                            color=COLORS["panel2"], width=9).pack(side="left", padx=(6, 12))
+                            color=COLORS["white"], width=9).pack(side="left", padx=(6, 12))
             self.skip_years_var = tk.StringVar(value="1")
             tk.Entry(row_skip, textvariable=self.skip_years_var, width=5,
-                     bg=COLORS["panel2"], fg=COLORS["text"], relief="flat",
+                     bg=COLORS["white"], fg=COLORS["black"], relief="flat",
                      insertbackground=COLORS["text"], font=self.f_small).pack(
                 side="left", padx=(4, 2), ipady=3)
             tk.Label(row_skip, text="年", bg=COLORS["panel"], fg=COLORS["text"],
                      font=self.f_small).pack(side="left")
             self._mk_button(row_skip, "按年跳过", self.on_skip_years,
-                            color=COLORS["panel2"], width=9).pack(side="left", padx=(6, 0))
+                            color=COLORS["white"], width=9).pack(side="left", padx=(6, 0))
             tk.Label(row_skip, text="（跳过期间只做数值汇总，不生成逐日事件）",
                      bg=COLORS["panel"], fg=COLORS["dim"],
                      font=self.f_small).pack(side="left", padx=(10, 0))
@@ -373,7 +379,7 @@ if tk is not None:
                                    ("日志", self.on_log), ("保存进度", self.on_save),
                                    ("读取进度", self.on_load), ("保存并退出", self.on_quit),
                                    ("帮助", self.on_help)):
-                self._mk_button(row2, label, command, color=COLORS["panel2"],
+                self._mk_button(row2, label, command, color=COLORS["white"],
                                 width=10).pack(side="left", padx=(0, 6))
 
             self.set_actions_enabled(False)
@@ -381,15 +387,58 @@ if tk is not None:
                             "请点击下方按钮开始新的人生，或读取已有存档继续。\n",
                             "h")
 
-        def _mk_button(self, parent, text, command, color=None, width=None):
+        def _mk_button(self, parent, text, command, color=None, width=None,
+                       variant="dark"):
+            """
+            统一按钮样式（极简双色）：
+                variant="dark"  -> 黑底白字（次要操作）
+                variant="light" -> 白底黑字（主要操作）
+                variant="orange"-> 橙底黑字（最强调操作）
+            color 参数保留兼容：传入 COLORS 里的白/橙会自动映射到对应 variant。
+            """
+            if color in (COLORS["accent"], COLORS["gold"]):
+                variant = "orange"
+            elif color in (COLORS["panel2"], COLORS["white"]):
+                variant = "light"
+            if variant == "orange":
+                bg, fg, hover_bg, hover_fg = COLORS["accent"], COLORS["black"], "#ffffff", COLORS["black"]
+            elif variant == "light":
+                bg, fg, hover_bg, hover_fg = COLORS["white"], COLORS["black"], COLORS["accent"], COLORS["black"]
+            else:
+                bg, fg, hover_bg, hover_fg = COLORS["panel"], COLORS["text"], COLORS["accent"], COLORS["black"]
             btn = tk.Button(parent, text=text, command=command,
-                            bg=color or COLORS["panel2"], fg=COLORS["text"],
-                            activebackground=COLORS["accent"], activeforeground="#0d1117",
-                            relief="flat", font=self.f_btn, padx=12, pady=7,
-                            cursor="hand2", disabledforeground="#5c6572")
+                            bg=bg, fg=fg,
+                            activebackground=hover_bg, activeforeground=hover_fg,
+                            relief="solid", bd=1, highlightthickness=0,
+                            font=self.f_btn, padx=10, pady=6,
+                            cursor="hand2", disabledforeground=COLORS["dim"])
             if width:
                 btn.configure(width=width)
             return btn
+
+        def adjust_window_size(self):
+            """
+            按内容所需高度自动扩展窗口。
+            原因：底部控制区（开局控件 / 游戏菜单）内容较多，
+            若窗口高度小于"所需高度"，pack 会把底部区域裁掉（按钮会看不见）。
+            """
+            try:
+                self.root.update_idletasks()
+                need_h = self.root.winfo_reqheight()
+                need_w = max(900, self.root.winfo_reqwidth())
+                cur_h = self.root.winfo_height()
+                cur_w = self.root.winfo_width()
+                screen_h = self.root.winfo_screenheight()
+                # 目标高度：至少 900，最多不超过屏幕可用高度的 95%
+                target_h = min(max(900, need_h + 12), int(screen_h * 0.95))
+                if cur_h < target_h - 4 or cur_w < need_w - 4:
+                    x = self.root.winfo_rootx()
+                    y = max(0, self.root.winfo_rooty())
+                    self.root.geometry("%dx%d+%d+%d" % (
+                        max(cur_w, need_w, 900), target_h, max(0, x), y))
+                    self.root.update_idletasks()
+            except Exception:
+                pass
 
         def _bind_shortcuts(self):
             """快捷键：Ctrl+S 保存进度，Ctrl+Q 保存并退出，Esc 关闭最上层弹窗。"""
@@ -535,7 +584,7 @@ if tk is not None:
             row1.pack(side="top", fill="x", padx=14, pady=(10, 4))
             tk.Label(row1, text="姓名：", bg=COLORS["panel"], fg=COLORS["text"],
                      font=self.f_body).pack(side="left")
-            self.name_entry = tk.Entry(row1, bg=COLORS["panel2"], fg=COLORS["text"],
+            self.name_entry = tk.Entry(row1, bg=COLORS["white"], fg=COLORS["black"],
                                        insertbackground=COLORS["text"], relief="flat",
                                        font=self.f_body, width=18)
             self.name_entry.insert(0, "无名氏")
@@ -548,21 +597,21 @@ if tk is not None:
                 tk.Radiobutton(row1, text="%s（%s）" % (city["name"], city["tag"]),
                                variable=self.city_var, value=city_id,
                                bg=COLORS["panel"], fg=COLORS["text"],
-                               selectcolor=COLORS["panel2"],
+                               selectcolor=COLORS["white"],
                                activebackground=COLORS["panel"],
                                activeforeground=COLORS["accent"],
                                font=self.f_small, cursor="hand2").pack(side="left", padx=(0, 6))
 
             row2 = tk.Frame(bar, bg=COLORS["panel"])
             row2.pack(side="top", fill="x", padx=14, pady=(4, 6))
-            self._mk_button(row2, "✔ 开始新的人生", self.start_new_game,
+            self._mk_button(row2, "开始新的人生", self.start_new_game,
                             color=COLORS["accent"], width=16).pack(side="left")
             self._mk_button(row2, "读取存档", self.on_load,
-                            color=COLORS["panel2"], width=12).pack(side="left", padx=(8, 0))
+                            color=COLORS["white"], width=12).pack(side="left", padx=(8, 0))
             self._mk_button(row2, "帮助", self.on_help,
-                            color=COLORS["panel2"], width=8).pack(side="left", padx=(8, 0))
+                            color=COLORS["white"], width=8).pack(side="left", padx=(8, 0))
             self._mk_button(row2, "退出游戏", self.on_quit,
-                            color=COLORS["border"], width=10).pack(side="left", padx=(8, 0))
+                            color=COLORS["white"], width=10).pack(side="left", padx=(8, 0))
             tk.Label(row2, text="（姓名最多 12 字；城市选择后永久生效）",
                      bg=COLORS["panel"], fg=COLORS["dim"],
                      font=self.f_small).pack(side="left", padx=(10, 0))
@@ -585,6 +634,8 @@ if tk is not None:
                     self.footer.pack(side="bottom", fill="x")
                 except Exception:
                     pass
+            # 游戏菜单比开局控件更高，需要重新检查窗口是否放得下
+            self.adjust_window_size()
 
         def start_new_game(self, dialog=None):
             """开始新的人生。"""
@@ -690,6 +741,26 @@ if tk is not None:
                 self.stage_var.set("阶段：%s　体质：%.0f(%s)　家境：%.0f(%s)%s" % (
                     stage_name(p.stage), p.constitution, con_name,
                     p.family_wealth, fam_name, fam_tag))
+            except Exception:
+                pass
+            # 家庭 / 生育状态行
+            try:
+                bits = []
+                if p.partner_name or p.married:
+                    bits.append("伴侣：%s" % (p.partner_name or "已婚"))
+                if p.pregnant:
+                    bits.append("孕期：第 %d 个月（共 9 个月）" % max(
+                        1, p.pregnancy_days // DAYS_PER_MONTH + 1))
+                if p.child_list:
+                    bits.append("子女 %d 人：%s" % (
+                        len(p.child_list),
+                        "、".join("%s(%d岁)" % (c.get("name", "孩子"), self.sim._child_age(c))
+                                  for c in p.child_list[:3])))
+                elif p.married or p.partner_name:
+                    bits.append("子女：暂无")
+                if p.married or p.partner_name:
+                    bits.append("避孕：%s" % p.contraception)
+                self.family_var.set(("　".join(bits)) if bits else "")
             except Exception:
                 pass
             self.refresh_action_points()
@@ -800,7 +871,7 @@ if tk is not None:
             secret = card.get("secret_reason")
             header = []
             if secret:
-                header.append("✦ %s" % secret)
+                header.append("◆ %s" % secret)
             header.append("【%s】%s" % (card["category"], card["event_name"]))
             body = "\n".join(header) + "\n\n" + card["desc"]
             if card.get("roll_lines"):
@@ -937,7 +1008,7 @@ if tk is not None:
 
             title = "结算：%s" % result.get("event_name", "事件")
             if result.get("special"):
-                title = "✦ 隐藏剧情结算 ✦"
+                title = "隐藏剧情结算"
             self.show_panel(title, "\n".join(lines), [("确定", "ok", None)],
                             width=800, height=620)
 
@@ -957,6 +1028,11 @@ if tk is not None:
                 return
             try:
                 self.locked = True
+                # ---- 「夫妻亲密」：先让玩家选择避孕方式 ----
+                if key == "intimacy":
+                    self.locked = False
+                    self._do_intimacy_flow()
+                    return
                 result = self.sim.apply_daily_action(key)
                 self.update_hud()
                 if result.get("tone") == "warn":
@@ -1002,6 +1078,76 @@ if tk is not None:
             except Exception as exc:
                 self.locked = False
                 self.alert("运行时异常", "执行行动时出现异常：\n%s\n\n%s"
+                           % (exc, traceback.format_exc(limit=4)))
+
+        def _do_intimacy_flow(self):
+            """
+            「夫妻亲密」完整流程：
+              1) 检查是否成年/有伴侣/不在孕期/今天是否已做过
+              2) 让玩家选择避孕方式（避孕套/安全期/短效药/不避孕）
+              3) 执行亲密：提升幸福 + 按概率受孕
+            """
+            p = self.player
+            ok, why = self.sim.can_be_intimate()
+            if not ok:
+                self.alert("暂时不行", why)
+                return
+            rate_rows = []
+            for name, success, desc in CONTRACEPTION_OPTIONS:
+                current = "（当前使用）" if name == p.contraception else ""
+                rate_rows.append("%-10s 避孕成功率 %-5s %s %s" % (
+                    name, pct_text(success) if success > 0 else "0%", desc, current))
+            body = ("与伴侣的亲密时光可以提升幸福度，也可能迎来新生命。\n\n"
+                    "当前状况：\n"
+                    "    年龄 %d 岁　体质 %.0f 分　健康 %.1f　幸福 %.1f\n"
+                    "    伴侣：%s　　子女：%d 人\n"
+                    "    本次未避孕时的受孕概率约为 %.1f%%\n\n"
+                    "请选择避孕方式：\n%s\n\n"
+                    "（生育上限年龄 %d 岁；孩子越多，再次受孕概率越低）"
+                    % (p.age, p.constitution, p.health, p.happy,
+                       p.partner_name or "配偶", len(p.child_list),
+                       conception_rate(p.age) * 100,
+                       "\n".join("    " + r for r in rate_rows),
+                       CONCEPTION_MAX_AGE_FEMALE))
+            buttons = [("%s（%s）" % (name, pct_text(success) if success > 0 else "不避孕"),
+                        "contra_%s" % name, None)
+                       for name, success, _desc in CONTRACEPTION_OPTIONS]
+            buttons.append(("算了，改天", "cancel", None))
+            panel = self.show_panel("夫妻亲密", body, buttons, width=760, height=620)
+            self.root.wait_window(panel)
+            result = panel.result
+            if not result or result == "cancel" or not str(result).startswith("contra_"):
+                return
+            choice_name = str(result)[len("contra_"):]
+            try:
+                self.locked = True
+                r = self.sim.do_intimacy(choice_name)
+                self.update_hud()
+                if r.get("tone") == "warn":
+                    self.locked = False
+                    self.alert("暂时不行", r.get("text", ""))
+                    return
+                lines = r.get("settlement_lines") or []
+                head = "【夫妻亲密】避孕方式：%s\n\n" % choice_name
+                if r.get("conceived"):
+                    head = "【喜讯】你们要当父母了！\n\n"
+                body2 = head + "\n".join(lines)
+                self.clear_main()
+                self.write_main("═══ %s ═══" % self.player.date_full, "h")
+                self.write_main(head.strip(), "good" if r.get("conceived") else "h")
+                for ln in lines:
+                    self.write_main("    " + ln)
+                self.set_status("亲密时光结束。行动点 %d/%d。" % (
+                    int(p.action_points), ACTION_POINTS_PER_DAY),
+                    "怀孕后可在状态面板查看孕期进度；孕期需要 9 个月。")
+                self.show_panel("夫妻亲密结果", body2, [("确定", "ok", None)],
+                                width=740, height=560)
+                self.refresh_action_points()
+                self.auto_save()
+                self.locked = False
+            except Exception as exc:
+                self.locked = False
+                self.alert("运行时异常", "执行亲密操作时出现异常：\n%s\n\n%s"
                            % (exc, traceback.format_exc(limit=4)))
 
         def on_skip_day(self, *_):
@@ -1173,7 +1319,7 @@ if tk is not None:
                 lines.append("        每日健康 -%.1f / 幸福 -%d，治愈费 %.2f" % (
                     d["hp_per_day"], d["happy_per_day"], d["cure_cost"]))
                 affordable = p.money >= d["cure_cost"]
-                label = "%s 治疗%s（%.2f）" % ("✔" if affordable else "✘", d["name"], d["cure_cost"])
+                label = "%s治疗%s（%.2f）" % ("" if affordable else "[金钱不足] ", d["name"], d["cure_cost"])
                 buttons.append((label, "cure_%s" % d["id"], None))
             lines.append("")
             lines.append("当前金钱：%.2f" % p.money)
@@ -1315,12 +1461,39 @@ if tk is not None:
             text.append("═══ 疾病速查 ═══")
             text.append(disease_table_text())
             text.append("")
+            text.append("（帮助面板底部另有「完整疾病表」按钮，可查看全部 %d 种疾病）"
+                        % len(COMMON_DISEASE_KEYS))
+            text.append("")
+            text.append("═══ 家庭与生育 ═══")
+            text.append("  1. 16 岁后可恋爱，22 岁后可结婚；结婚后每天可进行一次「夫妻亲密」。")
+            text.append("  2. 亲密会提升幸福度，并可能受孕（可选择避孕方式：安全期 55%、"
+                        "避孕套 92%、短效避孕药 98%）。")
+            text.append("  3. 受孕概率随年龄变化：20~25 岁约 20~22%，35 岁 14%，40 岁 8%，"
+                        "45 岁以上基本不会怀孕。")
+            text.append("  4. 孕期 270 天（9 个月），期间每月有孕期反应，并有流产风险；"
+                        "分娩存在并发症风险（年龄越大越高）。")
+            text.append("  5. 孩子出生后会继承父母体质，每年成长都会有反馈；"
+                        "养育开销按年龄递增，可用「陪伴孩子」提升幸福。")
+            text.append("")
             text.append("═══ 文件位置 ═══")
             text.append("  数据目录：%s" % self.base_dir)
             text.append("  存档文件：%s" % self.save_path)
             text.append("  日志文件：%s" % self.log_path)
-            self.show_panel("帮助 / 玩法说明", "\n".join(text), [("确定", "ok", None)],
-                            width=820, height=660)
+            panel = self.show_panel("帮助 / 玩法说明", "\n".join(text),
+                                    [("完整疾病表", "diseases", None), ("确定", "ok", None)],
+                                    width=820, height=660)
+            self.root.wait_window(panel)
+            if panel.result == "diseases":
+                self.on_disease_table()
+
+        def on_disease_table(self, *_):
+            """展示全部疾病（按分类）。"""
+            text = ["═══ 完整疾病表（共 %d 种常见疾病）═══" % len(COMMON_DISEASE_KEYS), ""]
+            text.append(disease_table_text(full=True))
+            text.append("说明：每日健康扣除已乘以全局系数 %.2f；"
+                        "体质越好，每日扣血越少、病程越短。" % DISEASE_HEALTH_IMPACT)
+            self.show_panel("完整疾病表", "\n".join(text), [("确定", "ok", None)],
+                            width=900, height=700)
 
         def on_quit(self, *_):
             """
@@ -1418,7 +1591,7 @@ if tk is not None:
                 except Exception:
                     summary = ""
             text = []
-            text.append("☠ 人生落幕")
+            text.append("── 人生落幕 ──")
             text.append("")
             text.append("姓名：%s        城市：%s" % (p.name, get_city(p.city)["name"]))
             text.append("享年：%d 岁（%s）" % (p.age, p.life_stage))

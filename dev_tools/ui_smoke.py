@@ -198,8 +198,11 @@ app.root.update()
 clicked = drive_dialog(["重新开始"])
 print("死亡总结面板流程通过（点击：%s）" % clicked)
 app.root.update()
-app.hide_start_controls()
-app.root.destroy()
+try:
+    app.root.quit()
+    app.root.destroy()
+except Exception:
+    pass
 print("阶段一完成：[OK] 单人流程无异常")
 
 # ---------------------------------------------------------------------------

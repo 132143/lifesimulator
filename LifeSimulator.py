@@ -116,8 +116,8 @@ AGE_MAX_LIMIT = 130          # 年龄硬上限，超过后自然衰老必定致�
 # 自然寿命模型（通过多种子实验调试：让角色的平均水平寿命稳定在 80 岁左右）
 NATURAL_DEATH_START = 55     # 从这个年龄开始每年掷"生死骰"
 NATURAL_DEATH_FLOOR_AGE = 45.0   # 死亡率曲线的起始年龄
-NATURAL_DEATH_BASE_RATE = 0.004  # 起始年龄（45 岁）的年度自然死亡概率
-NATURAL_DEATH_GROWTH = 1.0625   # 死亡率年增长系数（45~85 岁，由多种子实验标定）
+NATURAL_DEATH_BASE_RATE = 0.0032  # 起始年龄（45 岁）的年度自然死亡概率
+NATURAL_DEATH_GROWTH = 1.0580     # 死亡率年增长系数（多种子标定：平均寿命≈80 岁）
 NATURAL_DEATH_ULTRA_AGE = 85.0  # 超过该年龄后死亡率加速上升
 NATURAL_DEATH_ULTRA_GROWTH = 1.17  # 高龄加速系数
 #: 健康状态对自然死亡率的修正（健康越差，死亡率越高）
@@ -186,14 +186,81 @@ FAMILY_SUPPORT_STAGES = ("infant", "preschool", "kindergarten", "primary", "midd
 # ------------------------------------------------------------------------------
 ACTION_POINTS_PER_DAY = 8
 #: 每次操作的行动点消耗（都设为 1 点，保证一天正好可以做 8 次操作）
-ACTION_COST = {"rest": 1, "work": 1, "fun": 1, "study": 1, "social": 1, "exercise": 1}
+ACTION_COST = {"rest": 1, "work": 1, "fun": 1, "study": 1, "social": 1,
+               "exercise": 1, "intimacy": 1, "parenting": 1}
 ACTION_LABELS = {
     "rest": "休息恢复", "work": "工作赚钱", "fun": "娱乐消费",
     "study": "学习充电", "social": "社交联络", "exercise": "锻炼身体",
+    "intimacy": "夫妻亲密", "parenting": "陪伴孩子",
 }
 #: 同一天内重复做同一件事的收益衰减（第 2 次 85%，第 3 次 70%……最低 40%）
 ACTION_REPEAT_DECAY = 0.85
 ACTION_REPEAT_FLOOR = 0.40
+#: 每天最多可以进行几次"夫妻亲密"（现实向限制）
+INTIMACY_MAX_PER_DAY = 1
+
+# ------------------------------------------------------------------------------
+# 疾病对健康的影响倍率（全局总开关）
+#   调低它 = 每种病对健康的伤害更小、人生更长（可自行微调）
+#   初始健康值见上方「初始值」区块的 INIT_HEALTH（上限 100）
+# ------------------------------------------------------------------------------
+DISEASE_HEALTH_IMPACT = 0.72
+
+# ------------------------------------------------------------------------------
+# 家庭 / 生育系统
+#   * 结婚后可以进行「夫妻亲密」：提升幸福，并有概率受孕（可采取避孕）
+#   * 孕期 270 天（游戏内 9 个月），期间有孕期反应与分娩风险
+#   * 孩子出生后有遗传体质、养育开销、成长事件
+# ------------------------------------------------------------------------------
+PREGNANCY_DAYS = 270                 # 孕期天数（30 天 × 9 个月）
+CONCEPTION_MIN_AGE = 18              # 最低生育年龄
+CONCEPTION_MAX_AGE_FEMALE = 45       # 女性生育上限年龄
+CONCEPTION_MAX_AGE_MALE = 60         # 男性生育上限年龄
+INTIMACY_MIN_AGE = 18                # 「夫妻亲密」的最低年龄
+INTIMACY_HAPPY_BASE = 6              # 亲密带来的基础幸福提升
+INTIMACY_HAPPY_MARRIED_BONUS = 3     # 已婚额外加成
+#: 每晚一次的受孕概率（未避孕）：按女性年龄分段
+CONCEPTION_RATE_BY_AGE = [
+    (20, 0.20), (25, 0.22), (30, 0.19), (35, 0.14),
+    (40, 0.08), (45, 0.04), (60, 0.01),
+]
+#: 避孕方式 -> 成功率
+CONTRACEPTION_OPTIONS = [
+    ("不避孕", 0.0, "顺其自然，受孕概率最高"),
+    ("安全期", 0.55, "低成本但不可靠"),
+    ("避孕套", 0.92, "常见且方便"),
+    ("短效避孕药", 0.98, "成功率高，需长期服用"),
+]
+#: 分娩风险：按母亲年龄
+BIRTH_RISK_BY_AGE = [
+    (20, 0.010), (25, 0.014), (30, 0.022), (35, 0.038),
+    (40, 0.075), (45, 0.150), (60, 0.300),
+]
+#: 孩子数量上限（现实向软上限，超过后受孕概率大幅下降）
+MAX_CHILDREN = 5
+#: 每个孩子每月的养育开销（游戏内货币）
+CHILD_MONTHLY_COST = 260.0
+#: 子女姓名池（出生时随机取名）
+CHILD_NAME_POOL = [
+    "小雨", "星辰", "安安", "乐乐", "子轩", "思远", "若溪", "嘉宁", "一诺", "清和",
+    "念安", "知微", "沐辰", "初棠", "亦然", "文轩", "语彤", "景行", "月明", "南风",
+]
+
+
+def conception_rate(age):
+    """按女性年龄返回"每次亲密未避孕时的受孕概率"。"""
+    for limit, rate in CONCEPTION_RATE_BY_AGE:
+        if age <= limit:
+            return rate
+    return CONCEPTION_RATE_BY_AGE[-1][1]
+
+
+def birth_risk(age):
+    """按母亲年龄返回分娩并发症概率。"""
+    for limit, rate in BIRTH_RISK_BY_AGE:
+        if age <= limit:
+            return rate
+    return BIRTH_RISK_BY_AGE[-1][1]
 
 # ------------------------------------------------------------------------------
 # 时间跳过（按月 / 按年跳过，只做合理的数值汇总，不生成逐日事件）
@@ -1344,7 +1411,7 @@ CITIES = {
             3: {"cold_wave": 10, "rain": 10, "haze": 10, "blizzard": 2, "heat_wave": 0, "heatstroke": 0},
             4: {"cold_wave": 26, "blizzard": 18, "haze": 12, "rain": 2, "heat_wave": 0, "heatstroke": 0},
         },
-        "disease_weights": {"cold": 20, "gastro": 8, "pneumonia": 10, "chronic": 10, "frostbite": 12, "heatstroke": 1},
+        "disease_weights": {"cold": 20, "flu": 16, "tonsillitis": 12, "bronchitis": 10, "pneumonia": 10, "asthma": 6, "rhinitis": 4, "gastro": 8, "food_poisoning": 6, "gastritis": 6, "hypertension": 8, "heart_disease": 6, "diabetes": 6, "gout": 5, "migraine": 6, "insomnia": 5, "frostbite": 12, "burns": 4, "fracture": 5, "sprain": 6, "dental": 5, "dermatitis": 4, "depression": 4, "anxiety": 4, "heatstroke": 1},
     },
     "beijing": {
         "name": "北京",
@@ -1360,7 +1427,7 @@ CITIES = {
             3: {"haze": 14, "rain": 10, "cold_wave": 6, "sandstorm": 4, "heat_wave": 0, "heatstroke": 0},
             4: {"cold_wave": 16, "haze": 16, "blizzard": 8, "sandstorm": 4, "rain": 2, "heat_wave": 0},
         },
-        "disease_weights": {"cold": 18, "gastro": 12, "pneumonia": 10, "chronic": 12, "frostbite": 6, "heatstroke": 3},
+        "disease_weights": {"cold": 18, "flu": 16, "tonsillitis": 10, "bronchitis": 12, "pneumonia": 10, "asthma": 8, "rhinitis": 8, "gastro": 12, "food_poisoning": 8, "gastritis": 8, "hypertension": 10, "heart_disease": 8, "diabetes": 8, "gout": 6, "migraine": 8, "insomnia": 7, "frostbite": 6, "burns": 4, "fracture": 5, "sprain": 6, "dental": 6, "dermatitis": 5, "depression": 5, "anxiety": 5, "heatstroke": 3},
     },
     "shanghai": {
         "name": "上海",
@@ -1376,7 +1443,7 @@ CITIES = {
             3: {"rain": 10, "haze": 8, "cold_wave": 4, "heat_wave": 0, "heatstroke": 0},
             4: {"cold_wave": 10, "rain": 12, "haze": 10, "heat_wave": 0, "heatstroke": 0},
         },
-        "disease_weights": {"cold": 16, "gastro": 18, "pneumonia": 8, "chronic": 8, "frostbite": 2, "heatstroke": 8},
+        "disease_weights": {"cold": 16, "flu": 14, "tonsillitis": 10, "bronchitis": 10, "pneumonia": 8, "asthma": 8, "rhinitis": 10, "gastro": 18, "food_poisoning": 12, "gastritis": 10, "hypertension": 9, "heart_disease": 6, "diabetes": 7, "gout": 6, "migraine": 8, "insomnia": 8, "frostbite": 2, "burns": 4, "fracture": 5, "sprain": 7, "dental": 6, "dermatitis": 7, "depression": 5, "anxiety": 5, "heatstroke": 8},
     },
     "guangzhou": {
         "name": "广州",
@@ -1392,7 +1459,7 @@ CITIES = {
             3: {"heat_wave": 8, "heatstroke": 8, "rain": 10, "haze": 8},
             4: {"heat_wave": 6, "heatstroke": 6, "cold_wave": 3, "rain": 6, "haze": 6},
         },
-        "disease_weights": {"cold": 12, "gastro": 16, "pneumonia": 6, "chronic": 6, "frostbite": 1, "heatstroke": 16},
+        "disease_weights": {"cold": 12, "flu": 12, "tonsillitis": 10, "bronchitis": 8, "pneumonia": 6, "asthma": 7, "rhinitis": 10, "gastro": 16, "food_poisoning": 12, "gastritis": 9, "hypertension": 8, "heart_disease": 5, "diabetes": 7, "gout": 7, "migraine": 7, "insomnia": 7, "frostbite": 1, "burns": 5, "fracture": 4, "sprain": 7, "dental": 6, "dermatitis": 8, "depression": 4, "anxiety": 4, "heatstroke": 16},
     },
 }
 
@@ -1513,59 +1580,314 @@ def temperature_adjust(dice, player):
 # ==============================================================================
 # 字段说明：
 #   name / kind / desc : 名称、类型、描述
-#   days               : (最短, 最长) 持续天数
-#   hp_per_day         : 每日健康扣除
+#   days               : (最短, 最长) 严重程度（1~5，用于判定"是否更严重"）
+#   hp_per_day         : 每日健康扣除（已按"现实病程 + 游戏可玩性"标定）
 #   happy_per_day      : 每日幸福扣除
 #   cure_cost          : 彻底治愈费用
 #   self_heal          : 每日自愈概率（0 表示不会自愈，只能花钱）
 #   temp_mod           : 每日体温累积影响（发烧为正、冻伤为负）
 #   needs_cure         : True 表示必须花钱治疗，否则一直持续（慢性病）
 #   fatal              : True 表示危重疾病，健康过低时可能直接致死
+#   severity           : 1~5 严重度（替代旧的 DISEASE_SEVERITY 表）
+#   scope              : 适用人群（all/child/adult/elder）——影响抽病权重
+#   contagion          : 传染性（1~3），影响季节/人群聚集时的权重
+#   tags               : 附加标签（fever 发热 / chill 失温 / chronic 慢性 / injury 外伤）
 # ==============================================================================
 
 DISEASES = {
+    # ---------------- 呼吸道 ----------------
     "cold": {
-        "id": "cold", "name": "感冒", "kind": "轻症",
-        "desc": "一场小感冒，鼻塞头痛，休息几天大多能好。",
-        "days": (2, 5), "hp_per_day": 2, "happy_per_day": 2,
-        "cure_cost": 80.0, "self_heal": 0.55, "temp_mod": 0.12,
+        "id": "cold", "name": "普通感冒", "kind": "轻症",
+        "desc": "鼻塞、流涕、打喷嚏，通常一周左右自愈。",
+        "days": (2, 6), "hp_per_day": 1.6, "happy_per_day": 2,
+        "cure_cost": 80.0, "self_heal": 0.55, "temp_mod": 0.10,
+        "severity": 1, "scope": "all", "contagion": 2, "tags": ["fever"],
     },
-    "gastro": {
-        "id": "gastro", "name": "肠胃炎", "kind": "中症",
-        "desc": "上吐下泻，浑身发软，吃点药能缓解，但拖久了伤身。",
-        "days": (3, 8), "hp_per_day": 3, "happy_per_day": 3,
-        "cure_cost": 320.0, "self_heal": 0.30, "temp_mod": 0.08,
+    "flu": {
+        "id": "flu", "name": "流行性感冒", "kind": "中症",
+        "desc": "高热、全身酸痛，比普通感冒重得多，容易并发肺炎。",
+        "days": (4, 10), "hp_per_day": 2.6, "happy_per_day": 3,
+        "cure_cost": 260.0, "self_heal": 0.35, "temp_mod": 0.22,
+        "severity": 2, "scope": "all", "contagion": 3, "tags": ["fever"],
+    },
+    "tonsillitis": {
+        "id": "tonsillitis", "name": "扁桃体炎", "kind": "中症",
+        "desc": "咽喉肿痛、吞咽困难，儿童和青少年尤其常见。",
+        "days": (3, 8), "hp_per_day": 2.2, "happy_per_day": 2,
+        "cure_cost": 220.0, "self_heal": 0.35, "temp_mod": 0.18,
+        "severity": 2, "scope": "child", "contagion": 1, "tags": ["fever"],
+    },
+    "bronchitis": {
+        "id": "bronchitis", "name": "支气管炎", "kind": "中症",
+        "desc": "咳嗽不止、痰多胸闷，抽烟或空气差的人更容易得。",
+        "days": (5, 12), "hp_per_day": 2.8, "happy_per_day": 3,
+        "cure_cost": 420.0, "self_heal": 0.25, "temp_mod": 0.15,
+        "severity": 3, "scope": "all", "contagion": 1, "tags": ["fever"],
     },
     "pneumonia": {
         "id": "pneumonia", "name": "肺炎", "kind": "重症",
-        "desc": "高烧不退、咳嗽胸痛，必须住院治疗，否则非常危险。",
-        "days": (7, 16), "hp_per_day": 6, "happy_per_day": 5,
-        "cure_cost": 2600.0, "self_heal": 0.05, "temp_mod": 0.32, "fatal": True,
+        "desc": "高烧不退、呼吸带杂音，必须住院治疗，否则非常危险。",
+        "days": (7, 18), "hp_per_day": 4.2, "happy_per_day": 5,
+        "cure_cost": 2600.0, "self_heal": 0.05, "temp_mod": 0.30,
+        "severity": 5, "scope": "all", "contagion": 1, "tags": ["fever"], "fatal": True,
     },
-    "chronic": {
-        "id": "chronic", "name": "慢性病", "kind": "顽疾",
-        "desc": "需要长期吃药控制的慢性疾病，不治会一直拖累身体。",
-        "days": (20, 40), "hp_per_day": 1.5, "happy_per_day": 2,
-        "cure_cost": 1800.0, "self_heal": 0.0, "temp_mod": 0.02,
+    "asthma": {
+        "id": "asthma", "name": "哮喘发作", "kind": "顽疾",
+        "desc": "气道痉挛、喘不上气，换季或雾霾天特别容易发作。",
+        "days": (2, 6), "hp_per_day": 3.0, "happy_per_day": 4,
+        "cure_cost": 480.0, "self_heal": 0.45, "temp_mod": 0.05,
+        "severity": 3, "scope": "all", "contagion": 0, "tags": ["chronic"],
+    },
+    "rhinitis": {
+        "id": "rhinitis", "name": "过敏性鼻炎", "kind": "轻症",
+        "desc": "喷嚏不断、鼻子发痒，春天和雾霾天最难受。",
+        "days": (4, 12), "hp_per_day": 0.8, "happy_per_day": 2,
+        "cure_cost": 180.0, "self_heal": 0.45, "temp_mod": 0.0,
+        "severity": 1, "scope": "all", "contagion": 0, "tags": ["chronic"],
+    },
+    # ---------------- 消化道 ----------------
+    "gastro": {
+        "id": "gastro", "name": "急性肠胃炎", "kind": "中症",
+        "desc": "上吐下泻、浑身发软，多因吃坏东西引起。",
+        "days": (3, 8), "hp_per_day": 2.4, "happy_per_day": 3,
+        "cure_cost": 320.0, "self_heal": 0.30, "temp_mod": 0.08,
+        "severity": 2, "scope": "all", "contagion": 2, "tags": [],
+    },
+    "food_poisoning": {
+        "id": "food_poisoning", "name": "食物中毒", "kind": "中症",
+        "desc": "剧烈腹痛、反复呕吐，需要尽快补液。",
+        "days": (2, 5), "hp_per_day": 3.2, "happy_per_day": 4,
+        "cure_cost": 400.0, "self_heal": 0.35, "temp_mod": 0.12,
+        "severity": 3, "scope": "all", "contagion": 0, "tags": ["fever"],
+    },
+    "gastritis": {
+        "id": "gastritis", "name": "慢性胃炎", "kind": "顽疾",
+        "desc": "胃部隐痛、反酸胀气，饮食不规律的人容易拖成老毛病。",
+        "days": (15, 40), "hp_per_day": 0.9, "happy_per_day": 2,
+        "cure_cost": 900.0, "self_heal": 0.10, "temp_mod": 0.0,
+        "severity": 3, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+    },
+    "appendicitis": {
+        "id": "appendicitis", "name": "阑尾炎", "kind": "急症",
+        "desc": "右下腹剧痛、按下去更疼，必须马上手术。",
+        "days": (5, 12), "hp_per_day": 4.5, "happy_per_day": 5,
+        "cure_cost": 3800.0, "self_heal": 0.02, "temp_mod": 0.25,
+        "severity": 5, "scope": "all", "contagion": 0, "tags": ["fever"], "fatal": True,
+    },
+    "hemorrhoids": {
+        "id": "hemorrhoids", "name": "痔疮", "kind": "轻症",
+        "desc": "久坐、便秘之后的老毛病，坐立不安。",
+        "days": (5, 15), "hp_per_day": 0.7, "happy_per_day": 2,
+        "cure_cost": 600.0, "self_heal": 0.35, "temp_mod": 0.0,
+        "severity": 2, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+    },
+    # ---------------- 心血管 / 代谢 ----------------
+    "hypertension": {
+        "id": "hypertension", "name": "高血压", "kind": "慢性病",
+        "desc": "头晕、后颈发紧，需要长期吃药控制，否则伤及心脑。",
+        "days": (25, 60), "hp_per_day": 1.1, "happy_per_day": 2,
+        "cure_cost": 1600.0, "self_heal": 0.0, "temp_mod": 0.02,
+        "severity": 4, "scope": "elder", "contagion": 0, "tags": ["chronic"],
         "needs_cure": True,
+    },
+    "heart_disease": {
+        "id": "heart_disease", "name": "冠心病", "kind": "重症",
+        "desc": "胸闷、心悸，情绪激动或劳累时可能急性发作。",
+        "days": (20, 50), "hp_per_day": 1.8, "happy_per_day": 3,
+        "cure_cost": 12000.0, "self_heal": 0.0, "temp_mod": 0.0,
+        "severity": 5, "scope": "elder", "contagion": 0, "tags": ["chronic"],
+        "needs_cure": True, "fatal": True,
+    },
+    "diabetes": {
+        "id": "diabetes", "name": "糖尿病", "kind": "慢性病",
+        "desc": "口渴、多尿、体重下降，需要长期控糖与忌口。",
+        "days": (30, 70), "hp_per_day": 1.0, "happy_per_day": 3,
+        "cure_cost": 2400.0, "self_heal": 0.0, "temp_mod": 0.0,
+        "severity": 4, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+        "needs_cure": True,
+    },
+    "hyperlipidemia": {
+        "id": "hyperlipidemia", "name": "高血脂", "kind": "慢性病",
+        "desc": "体检报告上的常客，控制饮食就能缓解。",
+        "days": (20, 50), "hp_per_day": 0.6, "happy_per_day": 1,
+        "cure_cost": 1200.0, "self_heal": 0.05, "temp_mod": 0.0,
+        "severity": 3, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+    },
+    "gout": {
+        "id": "gout", "name": "痛风", "kind": "顽疾",
+        "desc": "关节红肿剧痛，半夜能把人疼醒，海鲜啤酒是元凶。",
+        "days": (4, 14), "hp_per_day": 2.4, "happy_per_day": 4,
+        "cure_cost": 800.0, "self_heal": 0.20, "temp_mod": 0.05,
+        "severity": 3, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+    },
+    "anemia": {
+        "id": "anemia", "name": "贫血", "kind": "慢性病",
+        "desc": "脸色苍白、容易头晕乏力，女性与偏食者更常见。",
+        "days": (10, 30), "hp_per_day": 0.9, "happy_per_day": 2,
+        "cure_cost": 700.0, "self_heal": 0.25, "temp_mod": 0.0,
+        "severity": 2, "scope": "all", "contagion": 0, "tags": ["chronic"],
+    },
+    # ---------------- 感染 / 其他内科 ----------------
+    "urinary_infection": {
+        "id": "urinary_infection", "name": "尿路感染", "kind": "中症",
+        "desc": "尿急尿痛、小腹坠胀，需要多喝水并尽快用药。",
+        "days": (3, 9), "hp_per_day": 2.0, "happy_per_day": 4,
+        "cure_cost": 300.0, "self_heal": 0.25, "temp_mod": 0.15,
+        "severity": 2, "scope": "all", "contagion": 0, "tags": ["fever"],
+    },
+    "kidney_stone": {
+        "id": "kidney_stone", "name": "肾结石", "kind": "急症",
+        "desc": "腰部绞痛，疼起来直不起身，严重时需要碎石。",
+        "days": (5, 15), "hp_per_day": 3.6, "happy_per_day": 5,
+        "cure_cost": 4200.0, "self_heal": 0.10, "temp_mod": 0.05,
+        "severity": 4, "scope": "adult", "contagion": 0, "tags": [],
+    },
+    "thyroid": {
+        "id": "thyroid", "name": "甲状腺疾病", "kind": "慢性病",
+        "desc": "心慌、怕冷或怕热、体重异常，需要长期服药。",
+        "days": (25, 60), "hp_per_day": 0.8, "happy_per_day": 2,
+        "cure_cost": 1800.0, "self_heal": 0.0, "temp_mod": 0.03,
+        "severity": 3, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+        "needs_cure": True,
+    },
+    "liver_disease": {
+        "id": "liver_disease", "name": "脂肪肝 / 肝功能异常", "kind": "慢性病",
+        "desc": "体检提示肝酶升高，多半是熬夜和饮食造成的。",
+        "days": (20, 50), "hp_per_day": 0.9, "happy_per_day": 2,
+        "cure_cost": 2000.0, "self_heal": 0.10, "temp_mod": 0.0,
+        "severity": 3, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+    },
+    "migraine": {
+        "id": "migraine", "name": "偏头痛", "kind": "顽疾",
+        "desc": "一侧头痛、怕光怕吵，压力大时发作频繁。",
+        "days": (2, 7), "hp_per_day": 1.4, "happy_per_day": 4,
+        "cure_cost": 260.0, "self_heal": 0.45, "temp_mod": 0.0,
+        "severity": 2, "scope": "adult", "contagion": 0, "tags": ["chronic"],
+    },
+    "insomnia": {
+        "id": "insomnia", "name": "失眠症", "kind": "轻症",
+        "desc": "躺下两小时还睡不着，白天精神恍惚。",
+        "days": (5, 20), "hp_per_day": 0.8, "happy_per_day": 3,
+        "cure_cost": 400.0, "self_heal": 0.40, "temp_mod": 0.0,
+        "severity": 2, "scope": "adult", "contagion": 0, "tags": [],
+    },
+    # ---------------- 外科 / 外伤 ----------------
+    "fracture": {
+        "id": "fracture", "name": "骨折", "kind": "外伤",
+        "desc": "骨头断了，需要打石膏静养很长一段时间。",
+        "days": (20, 45), "hp_per_day": 2.0, "happy_per_day": 3,
+        "cure_cost": 3000.0, "self_heal": 0.05, "temp_mod": 0.05,
+        "severity": 4, "scope": "all", "contagion": 0, "tags": ["injury"],
+    },
+    "sprain": {
+        "id": "sprain", "name": "扭伤", "kind": "外伤",
+        "desc": "脚踝或手腕扭伤，肿得像个馒头。",
+        "days": (5, 14), "hp_per_day": 1.2, "happy_per_day": 2,
+        "cure_cost": 300.0, "self_heal": 0.40, "temp_mod": 0.0,
+        "severity": 2, "scope": "all", "contagion": 0, "tags": ["injury"],
+    },
+    "burns": {
+        "id": "burns", "name": "烫伤 / 烧伤", "kind": "外伤",
+        "desc": "皮肤红肿起泡，处理不当会留疤甚至感染。",
+        "days": (4, 12), "hp_per_day": 2.6, "happy_per_day": 3,
+        "cure_cost": 1200.0, "self_heal": 0.20, "temp_mod": 0.10,
+        "severity": 3, "scope": "all", "contagion": 0, "tags": ["injury"],
     },
     "frostbite": {
         "id": "frostbite", "name": "冻伤", "kind": "外伤",
         "desc": "手脚冻得失去知觉，严重时皮肤发黑，必须尽快处理。",
-        "days": (3, 9), "hp_per_day": 3.5, "happy_per_day": 3,
+        "days": (3, 9), "hp_per_day": 2.2, "happy_per_day": 3,
         "cure_cost": 260.0, "self_heal": 0.25, "temp_mod": -0.30,
+        "severity": 2, "scope": "all", "contagion": 0, "tags": ["chill", "injury"],
     },
     "heatstroke": {
         "id": "heatstroke", "name": "中暑", "kind": "急症",
         "desc": "头晕恶心、体温飙升，需要马上降温补水。",
-        "days": (2, 6), "hp_per_day": 4, "happy_per_day": 4,
+        "days": (2, 6), "hp_per_day": 3.0, "happy_per_day": 4,
         "cure_cost": 300.0, "self_heal": 0.35, "temp_mod": 0.35,
+        "severity": 2, "scope": "all", "contagion": 0, "tags": ["fever"],
+    },
+    # ---------------- 皮肤 / 口腔 / 眼耳 ----------------
+    "dermatitis": {
+        "id": "dermatitis", "name": "皮炎 / 湿疹", "kind": "轻症",
+        "desc": "皮肤发红发痒，越挠越难受。",
+        "days": (5, 20), "hp_per_day": 0.6, "happy_per_day": 3,
+        "cure_cost": 350.0, "self_heal": 0.30, "temp_mod": 0.0,
+        "severity": 1, "scope": "all", "contagion": 0, "tags": ["chronic"],
+    },
+    "dental": {
+        "id": "dental", "name": "牙痛 / 龋齿", "kind": "轻症",
+        "desc": "牙疼不是病，疼起来真要命，补牙还要花不少钱。",
+        "days": (3, 10), "hp_per_day": 1.2, "happy_per_day": 4,
+        "cure_cost": 900.0, "self_heal": 0.25, "temp_mod": 0.0,
+        "severity": 2, "scope": "all", "contagion": 0, "tags": [],
+    },
+    "conjunctivitis": {
+        "id": "conjunctivitis", "name": "结膜炎", "kind": "轻症",
+        "desc": "眼睛红痒、分泌物增多，传染性很强。",
+        "days": (3, 8), "hp_per_day": 0.9, "happy_per_day": 3,
+        "cure_cost": 200.0, "self_heal": 0.45, "temp_mod": 0.05,
+        "severity": 1, "scope": "all", "contagion": 2, "tags": [],
+    },
+    "otitis": {
+        "id": "otitis", "name": "中耳炎", "kind": "中症",
+        "desc": "耳朵闷痛、听力下降，小孩子尤其容易得。",
+        "days": (4, 10), "hp_per_day": 1.8, "happy_per_day": 3,
+        "cure_cost": 400.0, "self_heal": 0.35, "temp_mod": 0.15,
+        "severity": 2, "scope": "child", "contagion": 1, "tags": ["fever"],
+    },
+    "hemorrhagic_fever": {
+        "id": "hemorrhagic_fever", "name": "重症感染", "kind": "危重症",
+        "desc": "高热、寒战、意识模糊，必须立刻住院抢救。",
+        "days": (8, 20), "hp_per_day": 5.0, "happy_per_day": 6,
+        "cure_cost": 20000.0, "self_heal": 0.02, "temp_mod": 0.45,
+        "severity": 5, "scope": "all", "contagion": 2, "tags": ["fever"],
+        "fatal": True,
+    },
+    # ---------------- 心理健康（现实中最常见的"病"之一）----------------
+    "depression": {
+        "id": "depression", "name": "抑郁症", "kind": "心理疾病",
+        "desc": "提不起劲、对什么都失去兴趣，需要长期疏导与治疗。",
+        "days": (30, 90), "hp_per_day": 1.0, "happy_per_day": 5,
+        "cure_cost": 3000.0, "self_heal": 0.02, "temp_mod": 0.0,
+        "severity": 4, "scope": "all", "contagion": 0, "tags": ["mental"],
+        "needs_cure": True,
+    },
+    "anxiety": {
+        "id": "anxiety", "name": "焦虑症", "kind": "心理疾病",
+        "desc": "心慌、手抖、总是担心最坏的结果。",
+        "days": (15, 45), "hp_per_day": 0.8, "happy_per_day": 4,
+        "cure_cost": 1500.0, "self_heal": 0.10, "temp_mod": 0.0,
+        "severity": 3, "scope": "all", "contagion": 0, "tags": ["mental"],
     },
 }
 
-#: 疾病严重度排序（用于判断"是否更严重"，避免小病覆盖大病）
-DISEASE_SEVERITY = {"cold": 1, "frostbite": 2, "heatstroke": 2, "gastro": 3,
-                    "chronic": 4, "pneumonia": 5}
+#: 疾病严重度（由 severity 字段生成，保留旧接口名）
+DISEASE_SEVERITY = {k: v.get("severity", 2) for k, v in DISEASES.items()}
+
+#: 常见疾病总览（供帮助面板展示）
+COMMON_DISEASE_KEYS = [
+    "cold", "flu", "tonsillitis", "bronchitis", "pneumonia", "asthma", "rhinitis",
+    "gastro", "food_poisoning", "gastritis", "appendicitis", "hemorrhoids",
+    "hypertension", "heart_disease", "diabetes", "hyperlipidemia", "gout", "anemia",
+    "urinary_infection", "kidney_stone", "thyroid", "liver_disease",
+    "migraine", "insomnia", "fracture", "sprain", "burns", "frostbite", "heatstroke",
+    "dermatitis", "dental", "conjunctivitis", "otitis", "hemorrhagic_fever",
+    "depression", "anxiety",
+]
+
+#: 疾病分类（用于界面分组展示）
+DISEASE_GROUPS = [
+    ("呼吸道", ["cold", "flu", "tonsillitis", "bronchitis", "pneumonia", "asthma", "rhinitis"]),
+    ("消化道", ["gastro", "food_poisoning", "gastritis", "appendicitis", "hemorrhoids"]),
+    ("心血管/代谢", ["hypertension", "heart_disease", "diabetes", "hyperlipidemia",
+                     "gout", "anemia", "thyroid", "liver_disease"]),
+    ("感染与其他内科", ["urinary_infection", "kidney_stone", "migraine", "insomnia",
+                        "hemorrhagic_fever"]),
+    ("外伤/环境", ["fracture", "sprain", "burns", "frostbite", "heatstroke"]),
+    ("皮肤/口腔/眼耳", ["dermatitis", "dental", "conjunctivitis", "otitis"]),
+    ("心理", ["depression", "anxiety"]),
+]
 
 #: 患病概率的年龄系数（U 型曲线：婴幼儿偏高 -> 青少年最低 -> 老年快速升高）
 #: 已按"各年龄段事件暴露量不同"做过实验修正，使实际患病频率呈标准 U 型
@@ -1683,15 +2005,40 @@ def illness_gap_ok(player, min_gap=None):
     return (getattr(player, "total_days", 0) - last) >= min_gap
 
 
-def disease_table_text():
-    """疾病速查表文本（用于帮助面板）。"""
+def disease_table_text(full=False):
+    """
+    疾病速查表文本（用于帮助面板）。
+    full=False 时只列出常见病摘要；full=True 时按分类列出全部疾病。
+    """
+    if not full:
+        lines = ["  共收录 %d 种常见疾病，按分类如下：" % len(COMMON_DISEASE_KEYS)]
+        for group_name, keys in DISEASE_GROUPS:
+            names = "、".join(DISEASES[k]["name"] for k in keys if k in DISEASES)
+            lines.append("  · %s（%d 种）：%s" % (group_name, len(keys), names))
+        lines.append("")
+        lines.append("  示例（每日健康/幸福扣除、治愈费、自愈率）：")
+        for key in ("cold", "flu", "gastro", "pneumonia", "appendicitis",
+                    "hypertension", "depression", "fracture"):
+            d = DISEASES[key]
+            lines.append("    - %s（%s）：健康 -%.1f / 幸福 -%d，治愈 %.0f，自愈 %s%s" % (
+                d["name"], d["kind"], d["hp_per_day"], d["happy_per_day"], d["cure_cost"],
+                pct_text(d["self_heal"]) if d["self_heal"] > 0 else "无（需治疗）",
+                "，危重" if d.get("fatal") else ""))
+        return "\n".join(lines)
     lines = []
-    for key in ("cold", "gastro", "pneumonia", "chronic", "frostbite", "heatstroke"):
-        d = DISEASES[key]
-        lines.append("  · %s（%s）：每日健康 -%d / 幸福 -%d，治愈费 %.0f，自愈率 %s%s" % (
-            d["name"], d["kind"], d["hp_per_day"], d["happy_per_day"], d["cure_cost"],
-            pct_text(d["self_heal"]) if d["self_heal"] > 0 else "无（必须治疗）",
-            "，危重" if d.get("fatal") else ""))
+    for group_name, keys in DISEASE_GROUPS:
+        lines.append("【%s】" % group_name)
+        for key in keys:
+            d = DISEASES.get(key)
+            if not d:
+                continue
+            days_txt = "%d~%d 天" % d["days"]
+            lines.append("  · %-14s %-6s 病程 %-10s 健康 -%.1f/天  幸福 -%d/天  治愈 %-8.0f 自愈 %-6s%s" % (
+                d["name"], d["kind"], days_txt, d["hp_per_day"], d["happy_per_day"],
+                d["cure_cost"],
+                pct_text(d["self_heal"]) if d["self_heal"] > 0 else "无",
+                "  危重" if d.get("fatal") else ("  需长期治疗" if d.get("needs_cure") else "")))
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -1703,7 +2050,7 @@ def make_disease(dice, disease_id, hp_scale=1.0, days_bonus=0, temp_scale=1.0):
     """
     base = DISEASES.get(disease_id) or DISEASES["cold"]
     lo, hi = base["days"]
-    # 用 d4/d6 决定持续天数，兼顾随机与均衡
+    # 用骰子决定持续天数，兼顾随机与均衡
     span = max(1, hi - lo + 1)
     res = dice.roll(span if span in DICE_FACES else 6, 1, 0, "病程天数")
     days = lo + (res.value - 1) % span + days_bonus
@@ -1721,50 +2068,116 @@ def make_disease(dice, disease_id, hp_scale=1.0, days_bonus=0, temp_scale=1.0):
         "temp_mod": round(base["temp_mod"] * temp_scale, 3),
         "needs_cure": base.get("needs_cure", False),
         "fatal": base.get("fatal", False),
+        "severity": base.get("severity", 2),
+        "desc": base.get("desc", ""),
+        "tags": list(base.get("tags", [])),
         "days_roll": res.to_dict(),
     }
 
 
+#: 疾病抽签的"人群适用性"倍率（scope 字段 + 年龄）
+def _scope_modifier(player, disease):
+    """
+    某些病只在特定人群高发（例如幼儿中耳炎、老人冠心病），
+    用倍率模拟真实人群分布；不适用时给一个很低但非零的权重。
+    """
+    scope = disease.get("scope", "all")
+    age = getattr(player, "age", 30)
+    if scope == "all":
+        return 1.0
+    if scope == "child":
+        if age <= 3:
+            return 2.0
+        if age <= 12:
+            return 1.8
+        if age <= 18:
+            return 1.0
+        if age <= 40:
+            return 0.25
+        return 0.08
+    if scope == "adult":
+        if age < 16:
+            return 0.06
+        if age <= 60:
+            return 1.0
+        return 1.2
+    if scope == "elder":
+        if age < 45:
+            return 0.05
+        if age < 60:
+            return 0.4
+        if age < 75:
+            return 1.3
+        return 2.0
+    return 1.0
+
+
 def disease_weight_for(player, disease_id):
     """
-    计算某种疾病相对易感程度：城市气候 + 季节 + 年龄 + 当前体温。
+    计算某种疾病相对易感程度：
+        城市气候 + 季节 + 年龄人群 + 体质 + 当前体温 + 健康状态。
+    疾病种类扩展到 30+ 种后，这里统一用"标签 + scope"驱动，避免逐病硬编码。
     """
+    disease = DISEASES.get(disease_id) or DISEASES["cold"]
     city = get_city(player.city)
     base = float(city["disease_weights"].get(disease_id, 5))
+    tags = set(disease.get("tags") or [])
     season = season_of_month(player.month)
-    # 季节修正
-    season_mod = {
-        "cold": {1: 1.2, 2: 0.7, 3: 1.3, 4: 1.8},
-        "pneumonia": {1: 1.1, 2: 0.6, 3: 1.2, 4: 1.8},
-        "gastro": {1: 1.0, 2: 1.6, 3: 1.1, 4: 0.8},
-        "chronic": {1: 1.0, 2: 1.0, 3: 1.0, 4: 1.1},
-        "frostbite": {1: 0.6, 2: 0.0, 3: 0.8, 4: 2.4},
-        "heatstroke": {1: 0.5, 2: 2.4, 3: 0.8, 4: 0.0},
-    }.get(disease_id, {}).get(season, 1.0)
+    contagion = float(disease.get("contagion", 0) or 0)
+
+    # ---- 季节修正 ----
+    season_mod = 1.0
+    if "fever" in tags or contagion >= 2:
+        # 呼吸道/传染病：冬春高发
+        season_mod *= {1: 1.25, 2: 0.7, 3: 1.3, 4: 1.8}.get(season, 1.0)
+    if "chill" in tags:
+        season_mod *= {1: 0.6, 2: 0.0, 3: 0.8, 4: 2.4}.get(season, 1.0)
+    if disease_id == "heatstroke" or "heat" in tags:
+        season_mod *= {1: 0.4, 2: 2.4, 3: 0.7, 4: 0.0}.get(season, 1.0)
+    if disease_id in ("gastro", "food_poisoning"):
+        # 夏季食物易变质
+        season_mod *= {1: 1.0, 2: 1.7, 3: 1.1, 4: 0.8}.get(season, 1.0)
+    if "injury" in tags:
+        season_mod *= {1: 1.1, 2: 1.15, 3: 1.05, 4: 1.15}.get(season, 1.0)
+    if "mental" in tags:
+        # 换季与冬季情绪问题更多
+        season_mod *= {1: 1.1, 2: 1.0, 3: 1.05, 4: 1.2}.get(season, 1.0)
     base *= season_mod
 
-    # 年龄修正：老人小孩更易重症
-    age = player.age
-    if age <= 6:
-        age_mod = 1.35 if disease_id in ("cold", "pneumonia", "gastro") else 1.1
-    elif age >= 60:
-        age_mod = 1.6 if disease_id in ("pneumonia", "chronic", "cold") else 1.3
-    elif age >= 45:
-        age_mod = 1.25 if disease_id in ("chronic", "pneumonia") else 1.05
-    else:
-        age_mod = 1.0
-    base *= age_mod
+    # ---- 人群适用性（年龄）----
+    base *= _scope_modifier(player, disease)
 
-    # 体温异常修正
-    if player.temp >= 38.0 and disease_id in ("pneumonia", "cold", "heatstroke"):
+    # ---- 年龄修正：老人更易重症/慢性病，幼儿更易感染 ----
+    age = player.age
+    severity = disease.get("severity", 2)
+    if age <= 6:
+        if "fever" in tags or contagion >= 1:
+            base *= 1.35
+        if "chronic" in tags or severity >= 4:
+            base *= 0.2
+    elif age >= 60:
+        if "chronic" in tags or severity >= 4:
+            base *= 1.7
+        if "fever" in tags:
+            base *= 1.4
+    elif age >= 45:
+        if "chronic" in tags or severity >= 4:
+            base *= 1.3
+
+    # ---- 体温异常 ----
+    if player.temp >= 38.0 and ("fever" in tags or severity >= 4):
         base *= 1.35
-    if player.temp <= 35.2 and disease_id in ("frostbite", "cold", "pneumonia"):
+    if player.temp <= 35.2 and ("chill" in tags or "fever" in tags):
         base *= 1.45
 
-    # 健康低时更容易病倒
+    # ---- 体质影响易感程度（体质越好，重病概率越低）----
+    sus = constitution_susceptibility(getattr(player, "constitution", CONSTITUTION_MEAN))
+    base *= (0.6 + 0.5 * sus)
+
+    # ---- 健康低时更容易病倒 ----
     if player.health <= 40:
         base *= 1.3
-    return max(0.5, base)
+    return max(0.4, base)
 
 
 def roll_disease(dice, player, hp_scale=1.0, forced_id=None):
@@ -2557,12 +2970,27 @@ _ev("school_commute", "上学路上", "环境", 800,
 # 8.3 情感社交类事件（婚恋、社交；婴幼儿不会说话、不能独自出门，故有严格年龄限制）
 # ------------------------------------------------------------------------------
 
+#: 伴侣姓名池（结婚时随机取名）
+PARTNER_NAME_POOL = [
+    "晓雯", "静怡", "雅琴", "思颖", "欣妍", "梦琪", "文博", "皓宇", "子墨", "浩然",
+    "嘉俊", "志远", "雨桐", "舒然", "书瑶", "亦辰", "若岚", "明轩", "佳怡", "承泽",
+]
+
+
 def _func_marry():
+    """结婚：登记婚姻状态、生成伴侣姓名与结婚日期（供生育系统使用）。"""
     def _apply(player):
         if player.married:
             return []
         player.married = True
-        return ["你结婚了，从此有了一个家。"]
+        if not getattr(player, "partner_name", ""):
+            try:
+                idx = int(player.rng.random() * len(PARTNER_NAME_POOL))
+                player.partner_name = PARTNER_NAME_POOL[idx % len(PARTNER_NAME_POOL)]
+            except Exception:
+                player.partner_name = "伴侣"
+        player.married_date = player.date_full
+        return ["你结婚了，伴侣是%s，从此有了一个家。" % player.partner_name]
     return _apply
 
 
@@ -3269,6 +3697,20 @@ class Player:
         self.job_level = 0                   # 职级（影响工资）
         self.married = False                 # 已婚
         self.children = 0                    # 子女数量
+        # ---- 生育系统 ----
+        self.partner_name = ""               # 伴侣姓名
+        self.married_date = ""               # 结婚日期
+        self.pregnant = False                # 是否处于孕期
+        self.pregnancy_days = 0              # 已怀孕天数
+        self.pregnancy_count = 0             # 累计怀孕次数
+        self.birth_count = 0                 # 累计生产次数
+        self.child_list = []                 # 子女档案（姓名/生日/性别/体质）
+        self.intimacy_today = 0              # 今天已进行的亲密次数
+        self.intimacy_last_day = None        # 上次亲密的天数
+        self.contraception = "避孕套"         # 当前避孕方式
+        self.conception_history = []         # 受孕记录
+        self.miscarriage = 0                 # 流产次数
+        self.next_child_gender = None         # 占位（保留）
         self.carried_effects = []            # 跨天持续效果
         self.milestones = []                 # 人生大事记
         self.event_history = []              # 已触发事件记录
@@ -3613,32 +4055,29 @@ class Player:
         return rows
 
     def health_color(self):
+        """极简配色：健康充裕时用白字，偏低时用橙色警示。"""
         if self.health <= 20:
-            return "#ff4d4d"
+            return "#ff8c00"
         if self.health <= 50:
-            return "#ffa64d"
-        return "#4ad07a"
+            return "#ff8c00"
+        return "#ffffff"
 
     def happy_color(self):
         if self.happy < LOW_HAPPY_THRESHOLD:
-            return "#ff4d4d"
+            return "#ff8c00"
         if self.happy < 45:
-            return "#ffa64d"
-        return "#4ad07a"
+            return "#ff8c00"
+        return "#ffffff"
 
     def money_color(self):
-        if self.money < 0:
-            return "#ff4d4d"
-        if self.money < 500:
-            return "#ffa64d"
-        return "#f0c040"
+        if self.money < 0 or self.money < 500:
+            return "#ff8c00"
+        return "#ffffff"
 
     def temp_color(self):
         if TEMP_NORMAL_LOW <= self.temp <= TEMP_NORMAL_HIGH:
-            return "#4ad07a"
-        if self.temp >= 38.5 or self.temp <= 34.5:
-            return "#ff4d4d"
-        return "#ffa64d"
+            return "#ffffff"
+        return "#ff8c00"
 
     # ------------------------------------------------------------------
     # 序列化
@@ -3662,6 +4101,14 @@ class Player:
             "diseases": self.diseases, "employed": self.employed,
             "job_level": self.job_level, "married": self.married,
             "children": self.children, "carried_effects": self.carried_effects,
+            "partner_name": self.partner_name, "married_date": self.married_date,
+            "pregnant": self.pregnant, "pregnancy_days": self.pregnancy_days,
+            "pregnancy_count": self.pregnancy_count, "birth_count": self.birth_count,
+            "child_list": self.child_list, "intimacy_today": self.intimacy_today,
+            "intimacy_last_day": self.intimacy_last_day,
+            "contraception": self.contraception,
+            "conception_history": self.conception_history[-50:],
+            "miscarriage": self.miscarriage,
             "last_illness_day": self.last_illness_day,
             "plain_days": self.plain_days, "illness_count": self.illness_count,
             "milestones": self.milestones, "event_history": self.event_history[-500:],
@@ -3735,6 +4182,41 @@ class Player:
             pass
         tally = data.get("action_tally")
         player.action_tally = tally if isinstance(tally, dict) else {}
+        # ---- 生育系统字段（旧存档缺失时补齐）----
+        player.partner_name = str(data.get("partner_name", "") or "")
+        player.married_date = str(data.get("married_date", "") or "")
+        player.pregnant = bool(data.get("pregnant", False))
+        try:
+            player.pregnancy_days = max(0, int(data.get("pregnancy_days", 0)))
+            player.pregnancy_count = max(0, int(data.get("pregnancy_count", 0)))
+            player.birth_count = max(0, int(data.get("birth_count", 0)))
+            player.intimacy_today = max(0, int(data.get("intimacy_today", 0)))
+            player.miscarriage = max(0, int(data.get("miscarriage", 0)))
+        except Exception:
+            pass
+        try:
+            player.intimacy_last_day = (None if data.get("intimacy_last_day") is None
+                                        else int(data.get("intimacy_last_day")))
+        except Exception:
+            player.intimacy_last_day = None
+        player.contraception = str(data.get("contraception", "避孕套") or "避孕套")
+        if player.contraception not in [o[0] for o in CONTRACEPTION_OPTIONS]:
+            player.contraception = "避孕套"
+        child_list = []
+        for item in (data.get("child_list") or []):
+            if not isinstance(item, dict):
+                continue
+            child_list.append({
+                "name": str(item.get("name", "孩子")),
+                "gender": str(item.get("gender", "未知")),
+                "birth_date": str(item.get("birth_date", "")),
+                "constitution": float(item.get("constitution", CONSTITUTION_MEAN)),
+                "mother_age": int(item.get("mother_age", player.age)),
+            })
+        player.child_list = child_list
+        player.children = max(player.children, len(child_list))
+        player.conception_history = [x for x in (data.get("conception_history") or [])
+                                     if isinstance(x, dict)][-50:]
         try:
             player.last_illness_day = (None if data.get("last_illness_day") is None
                                        else int(data.get("last_illness_day")))
@@ -4171,6 +4653,13 @@ class Simulator:
         city = get_city(p.city)
         month_expense = BASE_EXPENSE * city["cost_factor"]
         month_expense += 120.0 * p.children          # 子女抚养
+        # 子女养育开销（按年龄递增：婴儿期最费钱）
+        for child in (p.child_list or []):
+            cage = self._child_age(child)
+            factor = 0.6 if cage <= 2 else (1.0 if cage <= 6 else (1.3 if cage <= 15 else 0.8))
+            month_expense += CHILD_MONTHLY_COST * factor
+        if p.pregnant:
+            month_expense += 800.0                   # 产检、营养、待产用品
         if p.married:
             month_expense *= 1.30
         if p.age < 16:
@@ -4372,7 +4861,10 @@ class Simulator:
             return
         # 体质影响每日扣血（体质弱的人病得更重）
         sus = constitution_susceptibility(p.constitution)
-        hp_factor = round(0.75 + 0.25 * sus, 2)
+        hp_factor = round((0.75 + 0.25 * sus) * DISEASE_HEALTH_IMPACT, 3)
+        # 怀孕期间用药受限，病情更难受
+        if p.pregnant:
+            hp_factor = round(hp_factor * 1.15, 3)
         for disease in list(p.diseases):
             hp_loss = round(disease["hp_per_day"] * hp_factor, 2)
             happy_loss = disease["happy_per_day"]
@@ -4571,6 +5063,278 @@ class Simulator:
             delta, _ = p.apply_effects({"health": -round(loss, 2)}, dice=self.dice)
             report.accumulate(delta)
             report.add_line("年老体衰：健康 %s" % fmt_signed(delta["health"], 1))
+
+    # ------------------------------------------------------------------
+    # 家庭 / 生育系统
+    # ------------------------------------------------------------------
+    def can_be_intimate(self):
+        """
+        检查能否进行「夫妻亲密」，返回 (是否允许, 提示文本)。
+        现实向限制：成年 + 已婚（或有伴侣）+ 不在孕期 + 每天最多 1 次。
+        """
+        p = self.player
+        if p.dead:
+            return False, "人物已经离世。"
+        if p.age < INTIMACY_MIN_AGE:
+            return False, "还没有成年（需 %d 岁以上）。" % INTIMACY_MIN_AGE
+        if not p.married and not p.partner_name:
+            return False, ("你还是单身。\n\n"
+                           "需要先经历恋爱、结婚（16 岁后可恋爱，22 岁后可结婚）。")
+        if p.pregnant:
+            return False, "伴侣正在孕期，医生建议静养。"
+        if getattr(p, "intimacy_today", 0) >= INTIMACY_MAX_PER_DAY:
+            return False, "今天已经有过亲密时光了，注意身体。"
+        if p.health < 20:
+            return False, "身体太虚弱了，先养好身体吧。"
+        return True, ""
+
+    def do_intimacy(self, contraception=None):
+        """
+        「夫妻亲密」：提升幸福度，并按概率受孕（可指定避孕方式）。
+        返回结果卡 dict。
+        """
+        p = self.player
+        ok, why = self.can_be_intimate()
+        if not ok:
+            return {"tone": "warn", "text": why}
+        report = DailyReport(p)
+        report.event_name = "夫妻亲密"
+        if contraception is not None and contraception in [o[0] for o in CONTRACEPTION_OPTIONS]:
+            p.contraception = contraception
+
+        # ---- 幸福提升 ----
+        happy_gain = INTIMACY_HAPPY_BASE
+        if p.married:
+            happy_gain += INTIMACY_HAPPY_MARRIED_BONUS
+        if p.health >= 70:
+            happy_gain += 2
+        if p.happy < 40:
+            happy_gain += 2      # 情绪低落时安慰作用更明显
+        roll = self.dice.d10("亲密感受")
+        self.dice.remember(roll, "亲密感受")
+        if roll.value >= 8:
+            happy_gain += 3
+            report.add_line("你们聊了很久，彼此都觉得更亲近了。")
+        elif roll.value <= 2:
+            happy_gain = max(2, happy_gain - 3)
+            report.add_line("今天两人都有些疲惫，只是安静地靠在一起。")
+        delta, _ = p.apply_effects({"happy": happy_gain, "health": +1}, dice=self.dice)
+        report.accumulate(delta)
+        p.intimacy_today = p.intimacy_today + 1
+        p.intimacy_last_day = p.total_days
+        report.add_line("亲密时光：幸福 %s，健康 %s（避孕方式：%s）" % (
+            fmt_signed(delta["happy"], 1), fmt_signed(delta["health"], 1), p.contraception))
+
+        # ---- 受孕判定 ----
+        conceive, note = self._try_conceive()
+        report.add_line(note)
+        if conceive:
+            report.add_line("例假迟迟没来，你们买了验孕棒——两条杠。")
+            p.add_milestone("确认怀孕（%d 岁）" % p.age, tag="生育")
+            if self.log:
+                self.log.milestone(p, "确认怀孕", "生育")
+        self.last_report = report
+        return {
+            "tone": "intimacy",
+            "title": "夫妻亲密",
+            "report": report,
+            "settlement_lines": list(report.lines),
+            "dice_lines": self.dice.today_lines(),
+            "conceived": conceive,
+            "action_points": p.action_points,
+        }
+
+    def _try_conceive(self):
+        """
+        受孕判定：年龄 + 避孕成功率 + 已生育数量 + 健康状况。
+        返回 (是否受孕, 说明文本)
+        """
+        p = self.player
+        if p.pregnant:
+            return False, "目前已在孕期中。"
+        if p.age < CONCEPTION_MIN_AGE:
+            return False, "年龄还太小，暂时不考虑生育。"
+        if p.age > CONCEPTION_MAX_AGE_FEMALE:
+            return False, "医学上已过最佳生育年龄，很难再怀孕（%d 岁）。" % p.age
+        if len(p.child_list) >= MAX_CHILDREN:
+            return False, "家里孩子已经很多了，再添一个实在养不起。"
+        base = conception_rate(p.age)
+        rate_map = {name: success for name, success, _desc in CONTRACEPTION_OPTIONS}
+        protect = rate_map.get(p.contraception, 0.0)
+        chance = base * (1.0 - protect)
+        if p.health < 50:
+            chance *= 0.6
+        if p.happy < LOW_HAPPY_THRESHOLD:
+            chance *= 0.7
+        if len(p.child_list) >= 2:
+            chance *= 0.6 ** (len(p.child_list) - 1)   # 孩子越多越不容易再怀
+        roll = self.dice.roll(10000, 1, 0, "受孕判定")
+        self.dice.remember(roll, "受孕判定")
+        threshold = chance * 10000.0
+        if roll.value <= max(0.5, threshold):
+            p.pregnant = True
+            p.pregnancy_days = 0
+            p.pregnancy_count += 1
+            p.conception_history.append({
+                "date": p.date_full, "age": p.age,
+                "contraception": p.contraception,
+            })
+            return True, "受孕判定：%d ≤ %.0f（避孕方式：%s）→ 怀孕了！" % (
+                roll.value, threshold, p.contraception)
+        return False, "受孕判定：%d > %.0f（避孕方式：%s）→ 这次没有怀上。" % (
+            roll.value, threshold, p.contraception)
+
+    def settle_pregnancy_phase(self, report):
+        """
+        孕期结算：每"月"推进一次，9 个月（270 天）后分娩。
+        期间有孕期反应、流产风险与分娩风险，孩子会继承父母体质。
+        """
+        p = self.player
+        if not p.pregnant or p.dead:
+            return
+        p.pregnancy_days += 1
+        if p.pregnancy_days % DAYS_PER_MONTH != 0:
+            return
+        month = p.pregnancy_days // DAYS_PER_MONTH
+        roll = self.dice.d10("孕期反应")
+        self.dice.remember(roll, "孕期反应")
+        if month <= 3:
+            if roll.value <= 6:
+                delta, _ = p.apply_effects({"health": -1.2, "happy": -2}, dice=self.dice)
+                report.accumulate(delta)
+                report.add_line("孕期第 %d 月：孕吐反应明显，健康 %s、幸福 %s" % (
+                    month, fmt_signed(delta["health"], 1), fmt_signed(delta["happy"], 1)))
+            else:
+                report.add_line("孕期第 %d 月：反应不重，一切正常。" % month)
+        elif month <= 6:
+            delta, _ = p.apply_effects({"happy": +3, "health": -0.5}, dice=self.dice)
+            report.accumulate(delta)
+            report.add_line("孕期第 %d 月：肚子一天天大起来，家里开始准备婴儿用品。" % month)
+        else:
+            if roll.value <= 4:
+                delta, _ = p.apply_effects({"health": -2, "happy": -2}, dice=self.dice)
+                report.accumulate(delta)
+                report.add_line("孕期第 %d 月：腰酸背痛、睡不好，健康 %s" % (
+                    month, fmt_signed(delta["health"], 1)))
+            else:
+                report.add_line("孕期第 %d 月：产检一切正常，医生说随时可能发动。" % month)
+
+        # ---- 流产风险（年龄越大、健康越差越高）----
+        if month <= 4:
+            risk = birth_risk(p.age) * 0.35 + (0.03 if p.health < 50 else 0.0)
+            check = self.dice.roll(10000, 1, 0, "流产判定")
+            if check.value <= risk * 10000.0:
+                p.pregnant = False
+                p.pregnancy_days = 0
+                p.miscarriage += 1
+                delta, _ = p.apply_effects({"health": -6, "happy": -18}, dice=self.dice)
+                report.accumulate(delta)
+                report.add_line("【不幸】孕期第 %d 月发生了流产。健康 %s、幸福 %s" % (
+                    month, fmt_signed(delta["health"], 1), fmt_signed(delta["happy"], 1)))
+                p.add_milestone("流产（%d 岁）" % p.age, tag="生育")
+                if self.log:
+                    self.log.milestone(p, "流产", "生育")
+                return
+
+        # ---- 到预产期：分娩 ----
+        if p.pregnancy_days >= PREGNANCY_DAYS:
+            self._deliver(report)
+
+    def _deliver(self, report):
+        """分娩：判定并发症与孩子情况，生成孩子档案并加入家庭。"""
+        p = self.player
+        risk = birth_risk(p.age)
+        if p.health < 50:
+            risk *= 1.5
+        if p.diseases:
+            risk *= 1.3
+        roll = self.dice.roll(10000, 1, 0, "分娩判定")
+        self.dice.remember(roll, "分娩判定")
+        p.pregnant = False
+        p.pregnancy_days = 0
+        p.birth_count += 1
+        gender_roll = self.dice.roll(2, 1, 0, "性别判定")
+        baby_gender = "男孩" if gender_roll.value == 1 else "女孩"
+        baby_name = self.dice.pick(CHILD_NAME_POOL, "取名")[0]
+        # 孩子体质：父母体质均值 + 随机波动（体现遗传）
+        base_con = (p.constitution + CONSTITUTION_MEAN) / 2.0
+        inherit = self.dice.roll(10000, 1, 0, "体质遗传")
+        baby_con = max(CONSTITUTION_MIN, min(CONSTITUTION_MAX,
+                                            base_con + (inherit.value - 5000) / 420.0))
+        child = {
+            "name": baby_name, "gender": baby_gender,
+            "birth_date": p.date_full, "constitution": round(baby_con, 1),
+            "mother_age": p.age,
+        }
+        p.child_list.append(child)
+        p.children = len(p.child_list)
+        happy_gain = 22
+        health_cost = 6.0
+        if roll.value <= risk * 10000.0:
+            severity = self.dice.d10("并发症程度").value
+            if severity >= 8:
+                health_cost += 14
+                happy_gain = 8
+                report.add_line("【难产】分娩过程中出现并发症，母子都经历了危险。")
+            else:
+                health_cost += 6
+                happy_gain = 14
+                report.add_line("【并发症】分娩不太顺利，好在医生处理及时。")
+        delta, _ = p.apply_effects({"health": -health_cost, "happy": happy_gain,
+                                    "money": -3000.0}, dice=self.dice)
+        report.accumulate(delta)
+        report.add_line("【喜讯】%s出生了（%s，先天体质 %.1f 分）。" % (
+            baby_name, baby_gender, baby_con))
+        report.add_line("分娩消耗：健康 %s，幸福 %s，生育与住院花费约 3000" % (
+            fmt_signed(delta["health"], 1), fmt_signed(delta["happy"], 1)))
+        p.add_milestone("孩子出生：%s（%s）" % (baby_name, baby_gender), tag="生育")
+        if self.log:
+            self.log.milestone(p, "孩子出生：%s（%s，体质 %.1f）" % (
+                baby_name, baby_gender, baby_con), "生育")
+
+    def settle_child_phase(self, report):
+        """子女成长结算：每年生日时给出孩子的成长反馈（影响父母幸福）。"""
+        p = self.player
+        if not p.child_list:
+            return
+        if not (p.month == p.birth_month and p.day == p.birth_day):
+            return
+        for child in p.child_list:
+            age = self._child_age(child)
+            if age in (1, 3, 6, 12, 18):
+                roll = self.dice.d10("孩子成长")
+                if roll.value >= 7:
+                    delta, _ = p.apply_effects({"happy": +4}, dice=self.dice)
+                    report.accumulate(delta)
+                    report.add_line("%s 今年 %d 岁了，懂事又健康，你心里很满足。" % (
+                        child["name"], age))
+                else:
+                    delta, _ = p.apply_effects({"happy": -2, "money": -300}, dice=self.dice)
+                    report.accumulate(delta)
+                    report.add_line("%s 今年 %d 岁了，正是最费心的时候。" % (
+                        child["name"], age))
+                if age == 18:
+                    p.add_milestone("%s 成年了" % child["name"], tag="家庭")
+                    if self.log:
+                        self.log.milestone(p, "%s 成年了" % child["name"], "家庭")
+
+    def _child_age(self, child):
+        """按"出生时母亲年龄"推算孩子当前年龄（稳健，不依赖日期解析）。"""
+        mother_age = int(child.get("mother_age", 0))
+        return max(0, self.player.age - mother_age)
+
+    def children_summary(self):
+        """子女概览文本。"""
+        p = self.player
+        if not p.child_list:
+            return "暂无子女"
+        lines = []
+        for child in p.child_list:
+            lines.append("    · %s（%s）%d 岁，先天体质 %.1f 分，出生于 %s" % (
+                child.get("name", "孩子"), child.get("gender", "未知"),
+                self._child_age(child), child.get("constitution", 50.0),
+                child.get("birth_date", "")))
+        return "\n".join(lines)
 
     def settle_mood_phase(self, report):
         """幸福过低 debuff：长期低于阈值会持续扣健康。"""
@@ -4960,12 +5724,16 @@ class Simulator:
 
     # ------------------------------------------------------------------
     def _finish_day(self, report, keep_pending=False):
-        """事件结算之后的收尾：疾病 → 体温 → 情绪 → 衰老 → 恢复 → 抢救 → 死亡 → 日志。"""
+        """事件结算之后的收尾：疾病 → 孕期 → 体温 → 情绪/子女 → 衰老 → 恢复 → 抢救 → 死亡 → 日志。"""
         self.settle_disease_phase(report)
+        if not self.player.dead:
+            self.settle_pregnancy_phase(report)
         if not self.player.dead:
             self.settle_env_phase(report)
         if not self.player.dead:
             self.settle_mood_phase(report)
+        if not self.player.dead:
+            self.settle_child_phase(report)
         if not self.player.dead:
             self.settle_aging_phase(report)
         if not self.player.dead:
@@ -5076,6 +5844,14 @@ class Simulator:
             self._do_social(report, decay)
         elif action_key == "exercise":
             self._do_exercise(report, decay)
+        elif action_key == "parenting":
+            result = self._do_parenting(report, decay)
+            if result is not None:
+                p.action_points += cost
+                p.actions_today = max(0, p.actions_today - 1)
+                tally[action_key] = max(0, tally[action_key] - 1)
+                p.action_tally = tally
+                return result
         else:
             p.action_points += cost
             p.actions_today = max(0, p.actions_today - 1)
@@ -5267,6 +6043,36 @@ class Simulator:
         p.stats["exercise_today"] = p.stats.get("exercise_today", 0) + 1
         p.stats["rest_streak"] = 0
 
+    def _do_parenting(self, report, decay=1.0):
+        """
+        陪伴孩子：提升幸福、让孩子成长得更好（消耗当天时间）。
+        没有孩子时返回提示卡（由上层退回行动点）。
+        """
+        p = self.player
+        if not p.child_list:
+            return {"tone": "warn",
+                    "text": "你还没有孩子。\n\n"
+                            "结婚后可以通过「夫妻亲密」迎接新生命。"}
+        roll = self.dice.d10("陪伴效果")
+        self.dice.remember(roll, "陪伴效果")
+        happy_gain = (4 + roll.value * 0.6) * decay
+        cost = round(80.0 * decay, 2)
+        effects = {"happy": happy_gain, "money": -cost}
+        if roll.value >= 8:
+            effects["happy"] = happy_gain + 4
+            report.add_line("你陪孩子玩了整整一下午，笑声一直没停过。")
+        elif roll.value <= 2:
+            report.add_line("孩子今天闹脾气，你怎么哄都不行。")
+            effects["happy"] = max(1.0, happy_gain - 3)
+        delta, _ = p.apply_effects(effects, dice=self.dice)
+        report.accumulate(delta)
+        # 孩子成长值累积（用于体现"陪伴"的长期作用）
+        p.stats["parenting_points"] = p.stats.get("parenting_points", 0) + int(roll.value)
+        report.add_line("陪伴孩子：幸福 %s，花费 %.2f（累计陪伴 %d 点）" % (
+            fmt_signed(delta["happy"], 1), cost, p.stats.get("parenting_points", 0)))
+        p.stats["rest_streak"] = 0
+        return None
+
     # ------------------------------------------------------------------
     # 推进一天 / 跳过这一天
     # ------------------------------------------------------------------
@@ -5312,16 +6118,30 @@ class Simulator:
         self.roll_ambient()
         self.settle_carried(report)
         self.auto_progress_stages(report)
+        # ---- 每天的身体与家庭变化（与事件结算保持同一条流水线）----
+        if not self.check_death(report):
+            self.settle_pregnancy_phase(report)
+        if not p.dead:
+            self.settle_mood_phase(report)
+        if not p.dead:
+            self.settle_child_phase(report)
+        if not p.dead:
+            self.settle_aging_phase(report)
+        if not p.dead:
+            self.settle_recover_phase(report)
+        if not p.dead:
+            self.settle_hospital_phase(report)
         if self.check_death(report):
             self.last_report = report
             self.pending = None
             self._log_delta(report)
             return {"tone": "dead", "text": "\n".join(report.lines), "report": report}
 
-        # ---- 新的一天：重置行动点 ----
+        # ---- 新的一天：重置行动点与"当天计数" ----
         p.action_points = ACTION_POINTS_PER_DAY
         p.actions_today = 0
         p.action_tally = {}
+        p.intimacy_today = 0
         p.stats.pop("exercise_today", None)
 
         self.last_report = report
@@ -5527,26 +6347,27 @@ class Simulator:
 # 13. Tkinter 界面层
 # ==============================================================================
 
-#: 深色主题配色
+#: 极简配色：黑底白字 / 白底黑字 + 橙色作为唯一强调色
 COLORS = {
-    "bg": "#12151a",
-    "panel": "#1b2028",
-    "panel2": "#232a34",
-    "border": "#333c4a",
-    "text": "#e6e9ef",
-    "dim": "#9aa4b2",
-    "accent": "#4da3ff",
-    "good": "#4ad07a",
-    "bad": "#ff6b6b",
-    "warn": "#f0c040",
-    "secret": "#b98cff",
-    "gold": "#ffd166",
+    "bg": "#000000",          # 主背景：纯黑
+    "panel": "#0d0d0d",       # 面板底色（接近黑）
+    "panel2": "#ffffff",      # 反色面板：纯白
+    "border": "#4a4a4a",      # 边框：中性灰
+    "text": "#ffffff",        # 主文字：纯白
+    "dim": "#a8a8a8",         # 次要文字：浅灰
+    "accent": "#ff8c00",      # 强调色：橙色（唯一彩色）
+    "good": "#ff8c00",        # 正向提示也用橙色（保持单色系统）
+    "bad": "#ff8c00",         # 负向提示同样用橙色，靠文字区分
+    "warn": "#ff8c00",
+    "secret": "#ff8c00",
+    "gold": "#ff8c00",
+    "black": "#000000",
+    "white": "#ffffff",
 }
 
-FONT_CANDIDATES = ("Microsoft YaHei UI", "Microsoft YaHei", "微软雅黑",
-                   "PingFang SC", "Noto Sans CJK SC", "SimHei", "SimSun")
-MONO_CANDIDATES = ("Cascadia Mono", "Consolas", "Sarasa Mono SC",
-                   "Microsoft YaHei Mono", "Courier New")
+#: 字体优先使用宋体（中文点阵感强、简洁）
+FONT_CANDIDATES = ("SimSun", "宋体", "NSimSun", "新宋体", "SimSun-ExtB")
+MONO_CANDIDATES = ("NSimSun", "SimSun", "宋体", "Consolas", "Courier New")
 
 
 if tk is not None:
@@ -5570,7 +6391,7 @@ if tk is not None:
             header = tk.Frame(self, bg=self.colors["panel"])
             header.pack(fill="x")
             tk.Label(header, text=title, bg=self.colors["panel"], fg=self.colors["accent"],
-                     font=body_font or ("Microsoft YaHei UI", 14, "bold"),
+                     font=body_font or ("SimSun", 14, "bold"),
                      padx=16, pady=10, anchor="w").pack(fill="x")
 
             # 中部文本区（带滚动条）
@@ -5579,7 +6400,7 @@ if tk is not None:
             self.text = tk.Text(body, wrap="word", bg=self.colors["panel"],
                                 fg=self.colors["text"], relief="flat",
                                 insertbackground=self.colors["text"],
-                                font=body_font or ("Microsoft YaHei UI", 11),
+                                font=body_font or ("SimSun", 11),
                                 padx=14, pady=12, spacing1=2, spacing3=4,
                                 highlightthickness=1,
                                 highlightbackground=self.colors["border"])
@@ -5631,18 +6452,17 @@ if tk is not None:
             self.close()
 
         def _make_button(self, parent, label, key, command):
-            color = self.colors["accent"]
+            """极简按钮：确认/继续=橙底黑字；取消/退出=白底黑字。"""
             if key in ("cancel", "quit", "close"):
-                color = self.colors["border"]
-            elif key in ("restart",):
-                color = self.colors["gold"]
-            elif key == "danger":
-                color = self.colors["bad"]
-            btn = tk.Button(parent, text=label, bg=color, fg="#0d1117",
-                            activebackground=self.colors["accent"],
-                            activeforeground="#0d1117",
-                            relief="flat", font=("Microsoft YaHei UI", 11, "bold"),
-                            padx=18, pady=8, cursor="hand2",
+                bg, fg = self.colors["white"], self.colors["black"]
+                hbg, hfg = self.colors["accent"], self.colors["black"]
+            else:
+                bg, fg = self.colors["accent"], self.colors["black"]
+                hbg, hfg = self.colors["white"], self.colors["black"]
+            btn = tk.Button(parent, text=label, bg=bg, fg=fg,
+                            activebackground=hbg, activeforeground=hfg,
+                            relief="solid", bd=1, font=(FONT_CANDIDATES[0], 11),
+                            padx=16, pady=8, cursor="hand2",
                             command=lambda k=key: self._activate_by_key(k))
             btn.pack(side="right", padx=(8, 0), pady=(4, 0))
             return btn
@@ -5724,7 +6544,7 @@ if tk is not None:
             self.root.geometry("900x800")
             self.root.minsize(780, 680)
             self.root.configure(bg=COLORS["bg"])
-            self.font_family = self._pick_font(FONT_CANDIDATES, "Microsoft YaHei UI")
+            self.font_family = self._pick_font(FONT_CANDIDATES, "SimSun")
             self.mono_family = self._pick_font(MONO_CANDIDATES, "Consolas")
             self._build_styles()
             self._build_layout()
@@ -5747,13 +6567,14 @@ if tk is not None:
             return fallback
 
         def _build_styles(self):
-            self.f_title = (self.font_family, 16, "bold")
-            self.f_h2 = (self.font_family, 13, "bold")
+            """字体规格：全部使用宋体；只靠字号与粗细区分层级。"""
+            self.f_title = (self.font_family, 15, "bold")
+            self.f_h2 = (self.font_family, 12, "bold")
             self.f_body = (self.font_family, 11)
             self.f_small = (self.font_family, 10)
             self.f_mono = (self.mono_family, 10)
-            self.f_big = (self.font_family, 26, "bold")
-            self.f_btn = (self.font_family, 11, "bold")
+            self.f_big = (self.font_family, 24, "bold")
+            self.f_btn = (self.font_family, 11)
 
         def _build_layout(self):
             # 重要：底部区域（开局控件 / 游戏菜单）必须先用 side="bottom" 占位，
@@ -5764,7 +6585,7 @@ if tk is not None:
             # 顶部标题栏
             header = tk.Frame(self.root, bg=COLORS["panel"])
             header.pack(side="top", fill="x")
-            tk.Label(header, text="🎲 弹窗式文字人生模拟器", bg=COLORS["panel"],
+            tk.Label(header, text="弹窗式文字人生模拟器", bg=COLORS["panel"],
                      fg=COLORS["accent"], font=self.f_title, padx=16, pady=10,
                      anchor="w").pack(side="left")
             self.date_var = tk.StringVar(value="尚未开始")
@@ -5775,8 +6596,8 @@ if tk is not None:
             stats = tk.Frame(self.root, bg=COLORS["bg"])
             stats.pack(side="top", fill="x", padx=14, pady=(12, 6))
             self.stat_labels = {}
-            for col, (key, label) in enumerate((("health", "❤ 健康"), ("happy", "☺ 幸福"),
-                                                ("money", "¥ 金钱"), ("temp", "🌡 体温"))):
+            for col, (key, label) in enumerate((("health", "健康"), ("happy", "幸福"),
+                                                ("money", "金钱"), ("temp", "体温"))):
                 card = tk.Frame(stats, bg=COLORS["panel"], highlightthickness=1,
                                 highlightbackground=COLORS["border"])
                 card.grid(row=0, column=col, padx=6, pady=4, sticky="nsew")
@@ -5805,6 +6626,10 @@ if tk is not None:
             # 阶段 / 体质 / 家境 行
             self.stage_var = tk.StringVar(value="")
             tk.Label(info, textvariable=self.stage_var, bg=COLORS["bg"], fg=COLORS["gold"],
+                     font=self.f_small, anchor="w", justify="left").pack(fill="x")
+            # 家庭 / 生育状态行
+            self.family_var = tk.StringVar(value="")
+            tk.Label(info, textvariable=self.family_var, bg=COLORS["bg"], fg="#ff9ecb",
                      font=self.f_small, anchor="w", justify="left").pack(fill="x")
 
             # 中部信息区（滚动文本，占据剩余全部空间）
@@ -5835,11 +6660,11 @@ if tk is not None:
             # ---- 第一行：推进 / 跳过这一天 ----
             row0 = tk.Frame(footer, bg=COLORS["panel"])
             row0.pack(fill="x", padx=14, pady=(10, 2))
-            self.btn_roll = self._mk_button(row0, "▶ 推进一天（掷骰抽事件）", self.on_roll_day,
+            self.btn_roll = self._mk_button(row0, "推进一天（掷骰抽事件）", self.on_roll_day,
                                             color=COLORS["accent"], width=24)
             self.btn_roll.pack(side="left")
-            self.btn_skip_day = self._mk_button(row0, "⏭ 跳过这一天（什么也不做）",
-                                                self.on_skip_day, color=COLORS["panel2"],
+            self.btn_skip_day = self._mk_button(row0, "跳过这一天（什么也不做）",
+                                                self.on_skip_day, color=COLORS["white"],
                                                 width=24)
             self.btn_skip_day.pack(side="left", padx=(8, 0))
             self.ap_var = tk.StringVar(value="行动点 --/8")
@@ -5850,10 +6675,11 @@ if tk is not None:
             row1 = tk.Frame(footer, bg=COLORS["panel"])
             row1.pack(fill="x", padx=14, pady=(2, 2))
             self.action_buttons = {}
-            for key in ("rest", "work", "fun", "study", "social", "exercise"):
+            for key in ("rest", "work", "fun", "study", "social", "exercise",
+                        "intimacy", "parenting"):
                 btn = self._mk_button(row1, ACTION_LABELS[key],
                                       lambda k=key: self.on_action(k),
-                                      color=COLORS["panel2"], width=9)
+                                      color=COLORS["white"], width=9)
                 btn.pack(side="left", padx=(0, 6))
                 self.action_buttons[key] = btn
             self.btn_rest = self.action_buttons["rest"]
@@ -5870,22 +6696,22 @@ if tk is not None:
                      font=self.f_small).pack(side="left")
             self.skip_months_var = tk.StringVar(value="1")
             tk.Entry(row_skip, textvariable=self.skip_months_var, width=5,
-                     bg=COLORS["panel2"], fg=COLORS["text"], relief="flat",
+                     bg=COLORS["white"], fg=COLORS["black"], relief="flat",
                      insertbackground=COLORS["text"], font=self.f_small).pack(
                 side="left", padx=(4, 2), ipady=3)
             tk.Label(row_skip, text="个月", bg=COLORS["panel"], fg=COLORS["text"],
                      font=self.f_small).pack(side="left")
             self._mk_button(row_skip, "按月跳过", self.on_skip_months,
-                            color=COLORS["panel2"], width=9).pack(side="left", padx=(6, 12))
+                            color=COLORS["white"], width=9).pack(side="left", padx=(6, 12))
             self.skip_years_var = tk.StringVar(value="1")
             tk.Entry(row_skip, textvariable=self.skip_years_var, width=5,
-                     bg=COLORS["panel2"], fg=COLORS["text"], relief="flat",
+                     bg=COLORS["white"], fg=COLORS["black"], relief="flat",
                      insertbackground=COLORS["text"], font=self.f_small).pack(
                 side="left", padx=(4, 2), ipady=3)
             tk.Label(row_skip, text="年", bg=COLORS["panel"], fg=COLORS["text"],
                      font=self.f_small).pack(side="left")
             self._mk_button(row_skip, "按年跳过", self.on_skip_years,
-                            color=COLORS["panel2"], width=9).pack(side="left", padx=(6, 0))
+                            color=COLORS["white"], width=9).pack(side="left", padx=(6, 0))
             tk.Label(row_skip, text="（跳过期间只做数值汇总，不生成逐日事件）",
                      bg=COLORS["panel"], fg=COLORS["dim"],
                      font=self.f_small).pack(side="left", padx=(10, 0))
@@ -5896,7 +6722,7 @@ if tk is not None:
                                    ("日志", self.on_log), ("保存进度", self.on_save),
                                    ("读取进度", self.on_load), ("保存并退出", self.on_quit),
                                    ("帮助", self.on_help)):
-                self._mk_button(row2, label, command, color=COLORS["panel2"],
+                self._mk_button(row2, label, command, color=COLORS["white"],
                                 width=10).pack(side="left", padx=(0, 6))
 
             self.set_actions_enabled(False)
@@ -5904,15 +6730,58 @@ if tk is not None:
                             "请点击下方按钮开始新的人生，或读取已有存档继续。\n",
                             "h")
 
-        def _mk_button(self, parent, text, command, color=None, width=None):
+        def _mk_button(self, parent, text, command, color=None, width=None,
+                       variant="dark"):
+            """
+            统一按钮样式（极简双色）：
+                variant="dark"  -> 黑底白字（次要操作）
+                variant="light" -> 白底黑字（主要操作）
+                variant="orange"-> 橙底黑字（最强调操作）
+            color 参数保留兼容：传入 COLORS 里的白/橙会自动映射到对应 variant。
+            """
+            if color in (COLORS["accent"], COLORS["gold"]):
+                variant = "orange"
+            elif color in (COLORS["panel2"], COLORS["white"]):
+                variant = "light"
+            if variant == "orange":
+                bg, fg, hover_bg, hover_fg = COLORS["accent"], COLORS["black"], "#ffffff", COLORS["black"]
+            elif variant == "light":
+                bg, fg, hover_bg, hover_fg = COLORS["white"], COLORS["black"], COLORS["accent"], COLORS["black"]
+            else:
+                bg, fg, hover_bg, hover_fg = COLORS["panel"], COLORS["text"], COLORS["accent"], COLORS["black"]
             btn = tk.Button(parent, text=text, command=command,
-                            bg=color or COLORS["panel2"], fg=COLORS["text"],
-                            activebackground=COLORS["accent"], activeforeground="#0d1117",
-                            relief="flat", font=self.f_btn, padx=12, pady=7,
-                            cursor="hand2", disabledforeground="#5c6572")
+                            bg=bg, fg=fg,
+                            activebackground=hover_bg, activeforeground=hover_fg,
+                            relief="solid", bd=1, highlightthickness=0,
+                            font=self.f_btn, padx=10, pady=6,
+                            cursor="hand2", disabledforeground=COLORS["dim"])
             if width:
                 btn.configure(width=width)
             return btn
+
+        def adjust_window_size(self):
+            """
+            按内容所需高度自动扩展窗口。
+            原因：底部控制区（开局控件 / 游戏菜单）内容较多，
+            若窗口高度小于"所需高度"，pack 会把底部区域裁掉（按钮会看不见）。
+            """
+            try:
+                self.root.update_idletasks()
+                need_h = self.root.winfo_reqheight()
+                need_w = max(900, self.root.winfo_reqwidth())
+                cur_h = self.root.winfo_height()
+                cur_w = self.root.winfo_width()
+                screen_h = self.root.winfo_screenheight()
+                # 目标高度：至少 900，最多不超过屏幕可用高度的 95%
+                target_h = min(max(900, need_h + 12), int(screen_h * 0.95))
+                if cur_h < target_h - 4 or cur_w < need_w - 4:
+                    x = self.root.winfo_rootx()
+                    y = max(0, self.root.winfo_rooty())
+                    self.root.geometry("%dx%d+%d+%d" % (
+                        max(cur_w, need_w, 900), target_h, max(0, x), y))
+                    self.root.update_idletasks()
+            except Exception:
+                pass
 
         def _bind_shortcuts(self):
             """快捷键：Ctrl+S 保存进度，Ctrl+Q 保存并退出，Esc 关闭最上层弹窗。"""
@@ -6058,7 +6927,7 @@ if tk is not None:
             row1.pack(side="top", fill="x", padx=14, pady=(10, 4))
             tk.Label(row1, text="姓名：", bg=COLORS["panel"], fg=COLORS["text"],
                      font=self.f_body).pack(side="left")
-            self.name_entry = tk.Entry(row1, bg=COLORS["panel2"], fg=COLORS["text"],
+            self.name_entry = tk.Entry(row1, bg=COLORS["white"], fg=COLORS["black"],
                                        insertbackground=COLORS["text"], relief="flat",
                                        font=self.f_body, width=18)
             self.name_entry.insert(0, "无名氏")
@@ -6071,21 +6940,21 @@ if tk is not None:
                 tk.Radiobutton(row1, text="%s（%s）" % (city["name"], city["tag"]),
                                variable=self.city_var, value=city_id,
                                bg=COLORS["panel"], fg=COLORS["text"],
-                               selectcolor=COLORS["panel2"],
+                               selectcolor=COLORS["white"],
                                activebackground=COLORS["panel"],
                                activeforeground=COLORS["accent"],
                                font=self.f_small, cursor="hand2").pack(side="left", padx=(0, 6))
 
             row2 = tk.Frame(bar, bg=COLORS["panel"])
             row2.pack(side="top", fill="x", padx=14, pady=(4, 6))
-            self._mk_button(row2, "✔ 开始新的人生", self.start_new_game,
+            self._mk_button(row2, "开始新的人生", self.start_new_game,
                             color=COLORS["accent"], width=16).pack(side="left")
             self._mk_button(row2, "读取存档", self.on_load,
-                            color=COLORS["panel2"], width=12).pack(side="left", padx=(8, 0))
+                            color=COLORS["white"], width=12).pack(side="left", padx=(8, 0))
             self._mk_button(row2, "帮助", self.on_help,
-                            color=COLORS["panel2"], width=8).pack(side="left", padx=(8, 0))
+                            color=COLORS["white"], width=8).pack(side="left", padx=(8, 0))
             self._mk_button(row2, "退出游戏", self.on_quit,
-                            color=COLORS["border"], width=10).pack(side="left", padx=(8, 0))
+                            color=COLORS["white"], width=10).pack(side="left", padx=(8, 0))
             tk.Label(row2, text="（姓名最多 12 字；城市选择后永久生效）",
                      bg=COLORS["panel"], fg=COLORS["dim"],
                      font=self.f_small).pack(side="left", padx=(10, 0))
@@ -6108,6 +6977,8 @@ if tk is not None:
                     self.footer.pack(side="bottom", fill="x")
                 except Exception:
                     pass
+            # 游戏菜单比开局控件更高，需要重新检查窗口是否放得下
+            self.adjust_window_size()
 
         def start_new_game(self, dialog=None):
             """开始新的人生。"""
@@ -6213,6 +7084,26 @@ if tk is not None:
                 self.stage_var.set("阶段：%s　体质：%.0f(%s)　家境：%.0f(%s)%s" % (
                     stage_name(p.stage), p.constitution, con_name,
                     p.family_wealth, fam_name, fam_tag))
+            except Exception:
+                pass
+            # 家庭 / 生育状态行
+            try:
+                bits = []
+                if p.partner_name or p.married:
+                    bits.append("伴侣：%s" % (p.partner_name or "已婚"))
+                if p.pregnant:
+                    bits.append("孕期：第 %d 个月（共 9 个月）" % max(
+                        1, p.pregnancy_days // DAYS_PER_MONTH + 1))
+                if p.child_list:
+                    bits.append("子女 %d 人：%s" % (
+                        len(p.child_list),
+                        "、".join("%s(%d岁)" % (c.get("name", "孩子"), self.sim._child_age(c))
+                                  for c in p.child_list[:3])))
+                elif p.married or p.partner_name:
+                    bits.append("子女：暂无")
+                if p.married or p.partner_name:
+                    bits.append("避孕：%s" % p.contraception)
+                self.family_var.set(("　".join(bits)) if bits else "")
             except Exception:
                 pass
             self.refresh_action_points()
@@ -6323,7 +7214,7 @@ if tk is not None:
             secret = card.get("secret_reason")
             header = []
             if secret:
-                header.append("✦ %s" % secret)
+                header.append("◆ %s" % secret)
             header.append("【%s】%s" % (card["category"], card["event_name"]))
             body = "\n".join(header) + "\n\n" + card["desc"]
             if card.get("roll_lines"):
@@ -6460,7 +7351,7 @@ if tk is not None:
 
             title = "结算：%s" % result.get("event_name", "事件")
             if result.get("special"):
-                title = "✦ 隐藏剧情结算 ✦"
+                title = "隐藏剧情结算"
             self.show_panel(title, "\n".join(lines), [("确定", "ok", None)],
                             width=800, height=620)
 
@@ -6480,6 +7371,11 @@ if tk is not None:
                 return
             try:
                 self.locked = True
+                # ---- 「夫妻亲密」：先让玩家选择避孕方式 ----
+                if key == "intimacy":
+                    self.locked = False
+                    self._do_intimacy_flow()
+                    return
                 result = self.sim.apply_daily_action(key)
                 self.update_hud()
                 if result.get("tone") == "warn":
@@ -6525,6 +7421,76 @@ if tk is not None:
             except Exception as exc:
                 self.locked = False
                 self.alert("运行时异常", "执行行动时出现异常：\n%s\n\n%s"
+                           % (exc, traceback.format_exc(limit=4)))
+
+        def _do_intimacy_flow(self):
+            """
+            「夫妻亲密」完整流程：
+              1) 检查是否成年/有伴侣/不在孕期/今天是否已做过
+              2) 让玩家选择避孕方式（避孕套/安全期/短效药/不避孕）
+              3) 执行亲密：提升幸福 + 按概率受孕
+            """
+            p = self.player
+            ok, why = self.sim.can_be_intimate()
+            if not ok:
+                self.alert("暂时不行", why)
+                return
+            rate_rows = []
+            for name, success, desc in CONTRACEPTION_OPTIONS:
+                current = "（当前使用）" if name == p.contraception else ""
+                rate_rows.append("%-10s 避孕成功率 %-5s %s %s" % (
+                    name, pct_text(success) if success > 0 else "0%", desc, current))
+            body = ("与伴侣的亲密时光可以提升幸福度，也可能迎来新生命。\n\n"
+                    "当前状况：\n"
+                    "    年龄 %d 岁　体质 %.0f 分　健康 %.1f　幸福 %.1f\n"
+                    "    伴侣：%s　　子女：%d 人\n"
+                    "    本次未避孕时的受孕概率约为 %.1f%%\n\n"
+                    "请选择避孕方式：\n%s\n\n"
+                    "（生育上限年龄 %d 岁；孩子越多，再次受孕概率越低）"
+                    % (p.age, p.constitution, p.health, p.happy,
+                       p.partner_name or "配偶", len(p.child_list),
+                       conception_rate(p.age) * 100,
+                       "\n".join("    " + r for r in rate_rows),
+                       CONCEPTION_MAX_AGE_FEMALE))
+            buttons = [("%s（%s）" % (name, pct_text(success) if success > 0 else "不避孕"),
+                        "contra_%s" % name, None)
+                       for name, success, _desc in CONTRACEPTION_OPTIONS]
+            buttons.append(("算了，改天", "cancel", None))
+            panel = self.show_panel("夫妻亲密", body, buttons, width=760, height=620)
+            self.root.wait_window(panel)
+            result = panel.result
+            if not result or result == "cancel" or not str(result).startswith("contra_"):
+                return
+            choice_name = str(result)[len("contra_"):]
+            try:
+                self.locked = True
+                r = self.sim.do_intimacy(choice_name)
+                self.update_hud()
+                if r.get("tone") == "warn":
+                    self.locked = False
+                    self.alert("暂时不行", r.get("text", ""))
+                    return
+                lines = r.get("settlement_lines") or []
+                head = "【夫妻亲密】避孕方式：%s\n\n" % choice_name
+                if r.get("conceived"):
+                    head = "【喜讯】你们要当父母了！\n\n"
+                body2 = head + "\n".join(lines)
+                self.clear_main()
+                self.write_main("═══ %s ═══" % self.player.date_full, "h")
+                self.write_main(head.strip(), "good" if r.get("conceived") else "h")
+                for ln in lines:
+                    self.write_main("    " + ln)
+                self.set_status("亲密时光结束。行动点 %d/%d。" % (
+                    int(p.action_points), ACTION_POINTS_PER_DAY),
+                    "怀孕后可在状态面板查看孕期进度；孕期需要 9 个月。")
+                self.show_panel("夫妻亲密结果", body2, [("确定", "ok", None)],
+                                width=740, height=560)
+                self.refresh_action_points()
+                self.auto_save()
+                self.locked = False
+            except Exception as exc:
+                self.locked = False
+                self.alert("运行时异常", "执行亲密操作时出现异常：\n%s\n\n%s"
                            % (exc, traceback.format_exc(limit=4)))
 
         def on_skip_day(self, *_):
@@ -6696,7 +7662,7 @@ if tk is not None:
                 lines.append("        每日健康 -%.1f / 幸福 -%d，治愈费 %.2f" % (
                     d["hp_per_day"], d["happy_per_day"], d["cure_cost"]))
                 affordable = p.money >= d["cure_cost"]
-                label = "%s 治疗%s（%.2f）" % ("✔" if affordable else "✘", d["name"], d["cure_cost"])
+                label = "%s治疗%s（%.2f）" % ("" if affordable else "[金钱不足] ", d["name"], d["cure_cost"])
                 buttons.append((label, "cure_%s" % d["id"], None))
             lines.append("")
             lines.append("当前金钱：%.2f" % p.money)
@@ -6838,12 +7804,39 @@ if tk is not None:
             text.append("═══ 疾病速查 ═══")
             text.append(disease_table_text())
             text.append("")
+            text.append("（帮助面板底部另有「完整疾病表」按钮，可查看全部 %d 种疾病）"
+                        % len(COMMON_DISEASE_KEYS))
+            text.append("")
+            text.append("═══ 家庭与生育 ═══")
+            text.append("  1. 16 岁后可恋爱，22 岁后可结婚；结婚后每天可进行一次「夫妻亲密」。")
+            text.append("  2. 亲密会提升幸福度，并可能受孕（可选择避孕方式：安全期 55%、"
+                        "避孕套 92%、短效避孕药 98%）。")
+            text.append("  3. 受孕概率随年龄变化：20~25 岁约 20~22%，35 岁 14%，40 岁 8%，"
+                        "45 岁以上基本不会怀孕。")
+            text.append("  4. 孕期 270 天（9 个月），期间每月有孕期反应，并有流产风险；"
+                        "分娩存在并发症风险（年龄越大越高）。")
+            text.append("  5. 孩子出生后会继承父母体质，每年成长都会有反馈；"
+                        "养育开销按年龄递增，可用「陪伴孩子」提升幸福。")
+            text.append("")
             text.append("═══ 文件位置 ═══")
             text.append("  数据目录：%s" % self.base_dir)
             text.append("  存档文件：%s" % self.save_path)
             text.append("  日志文件：%s" % self.log_path)
-            self.show_panel("帮助 / 玩法说明", "\n".join(text), [("确定", "ok", None)],
-                            width=820, height=660)
+            panel = self.show_panel("帮助 / 玩法说明", "\n".join(text),
+                                    [("完整疾病表", "diseases", None), ("确定", "ok", None)],
+                                    width=820, height=660)
+            self.root.wait_window(panel)
+            if panel.result == "diseases":
+                self.on_disease_table()
+
+        def on_disease_table(self, *_):
+            """展示全部疾病（按分类）。"""
+            text = ["═══ 完整疾病表（共 %d 种常见疾病）═══" % len(COMMON_DISEASE_KEYS), ""]
+            text.append(disease_table_text(full=True))
+            text.append("说明：每日健康扣除已乘以全局系数 %.2f；"
+                        "体质越好，每日扣血越少、病程越短。" % DISEASE_HEALTH_IMPACT)
+            self.show_panel("完整疾病表", "\n".join(text), [("确定", "ok", None)],
+                            width=900, height=700)
 
         def on_quit(self, *_):
             """
@@ -6941,7 +7934,7 @@ if tk is not None:
                 except Exception:
                     summary = ""
             text = []
-            text.append("☠ 人生落幕")
+            text.append("── 人生落幕 ──")
             text.append("")
             text.append("姓名：%s        城市：%s" % (p.name, get_city(p.city)["name"]))
             text.append("享年：%d 岁（%s）" % (p.age, p.life_stage))

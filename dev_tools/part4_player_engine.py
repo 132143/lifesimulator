@@ -62,6 +62,20 @@ class Player:
         self.job_level = 0                   # 职级（影响工资）
         self.married = False                 # 已婚
         self.children = 0                    # 子女数量
+        # ---- 生育系统 ----
+        self.partner_name = ""               # 伴侣姓名
+        self.married_date = ""               # 结婚日期
+        self.pregnant = False                # 是否处于孕期
+        self.pregnancy_days = 0              # 已怀孕天数
+        self.pregnancy_count = 0             # 累计怀孕次数
+        self.birth_count = 0                 # 累计生产次数
+        self.child_list = []                 # 子女档案（姓名/生日/性别/体质）
+        self.intimacy_today = 0              # 今天已进行的亲密次数
+        self.intimacy_last_day = None        # 上次亲密的天数
+        self.contraception = "避孕套"         # 当前避孕方式
+        self.conception_history = []         # 受孕记录
+        self.miscarriage = 0                 # 流产次数
+        self.next_child_gender = None         # 占位（保留）
         self.carried_effects = []            # 跨天持续效果
         self.milestones = []                 # 人生大事记
         self.event_history = []              # 已触发事件记录
@@ -406,32 +420,29 @@ class Player:
         return rows
 
     def health_color(self):
+        """极简配色：健康充裕时用白字，偏低时用橙色警示。"""
         if self.health <= 20:
-            return "#ff4d4d"
+            return "#ff8c00"
         if self.health <= 50:
-            return "#ffa64d"
-        return "#4ad07a"
+            return "#ff8c00"
+        return "#ffffff"
 
     def happy_color(self):
         if self.happy < LOW_HAPPY_THRESHOLD:
-            return "#ff4d4d"
+            return "#ff8c00"
         if self.happy < 45:
-            return "#ffa64d"
-        return "#4ad07a"
+            return "#ff8c00"
+        return "#ffffff"
 
     def money_color(self):
-        if self.money < 0:
-            return "#ff4d4d"
-        if self.money < 500:
-            return "#ffa64d"
-        return "#f0c040"
+        if self.money < 0 or self.money < 500:
+            return "#ff8c00"
+        return "#ffffff"
 
     def temp_color(self):
         if TEMP_NORMAL_LOW <= self.temp <= TEMP_NORMAL_HIGH:
-            return "#4ad07a"
-        if self.temp >= 38.5 or self.temp <= 34.5:
-            return "#ff4d4d"
-        return "#ffa64d"
+            return "#ffffff"
+        return "#ff8c00"
 
     # ------------------------------------------------------------------
     # 序列化
@@ -455,6 +466,14 @@ class Player:
             "diseases": self.diseases, "employed": self.employed,
             "job_level": self.job_level, "married": self.married,
             "children": self.children, "carried_effects": self.carried_effects,
+            "partner_name": self.partner_name, "married_date": self.married_date,
+            "pregnant": self.pregnant, "pregnancy_days": self.pregnancy_days,
+            "pregnancy_count": self.pregnancy_count, "birth_count": self.birth_count,
+            "child_list": self.child_list, "intimacy_today": self.intimacy_today,
+            "intimacy_last_day": self.intimacy_last_day,
+            "contraception": self.contraception,
+            "conception_history": self.conception_history[-50:],
+            "miscarriage": self.miscarriage,
             "last_illness_day": self.last_illness_day,
             "plain_days": self.plain_days, "illness_count": self.illness_count,
             "milestones": self.milestones, "event_history": self.event_history[-500:],
@@ -528,6 +547,41 @@ class Player:
             pass
         tally = data.get("action_tally")
         player.action_tally = tally if isinstance(tally, dict) else {}
+        # ---- 生育系统字段（旧存档缺失时补齐）----
+        player.partner_name = str(data.get("partner_name", "") or "")
+        player.married_date = str(data.get("married_date", "") or "")
+        player.pregnant = bool(data.get("pregnant", False))
+        try:
+            player.pregnancy_days = max(0, int(data.get("pregnancy_days", 0)))
+            player.pregnancy_count = max(0, int(data.get("pregnancy_count", 0)))
+            player.birth_count = max(0, int(data.get("birth_count", 0)))
+            player.intimacy_today = max(0, int(data.get("intimacy_today", 0)))
+            player.miscarriage = max(0, int(data.get("miscarriage", 0)))
+        except Exception:
+            pass
+        try:
+            player.intimacy_last_day = (None if data.get("intimacy_last_day") is None
+                                        else int(data.get("intimacy_last_day")))
+        except Exception:
+            player.intimacy_last_day = None
+        player.contraception = str(data.get("contraception", "避孕套") or "避孕套")
+        if player.contraception not in [o[0] for o in CONTRACEPTION_OPTIONS]:
+            player.contraception = "避孕套"
+        child_list = []
+        for item in (data.get("child_list") or []):
+            if not isinstance(item, dict):
+                continue
+            child_list.append({
+                "name": str(item.get("name", "孩子")),
+                "gender": str(item.get("gender", "未知")),
+                "birth_date": str(item.get("birth_date", "")),
+                "constitution": float(item.get("constitution", CONSTITUTION_MEAN)),
+                "mother_age": int(item.get("mother_age", player.age)),
+            })
+        player.child_list = child_list
+        player.children = max(player.children, len(child_list))
+        player.conception_history = [x for x in (data.get("conception_history") or [])
+                                     if isinstance(x, dict)][-50:]
         try:
             player.last_illness_day = (None if data.get("last_illness_day") is None
                                        else int(data.get("last_illness_day")))
@@ -964,6 +1018,13 @@ class Simulator:
         city = get_city(p.city)
         month_expense = BASE_EXPENSE * city["cost_factor"]
         month_expense += 120.0 * p.children          # 子女抚养
+        # 子女养育开销（按年龄递增：婴儿期最费钱）
+        for child in (p.child_list or []):
+            cage = self._child_age(child)
+            factor = 0.6 if cage <= 2 else (1.0 if cage <= 6 else (1.3 if cage <= 15 else 0.8))
+            month_expense += CHILD_MONTHLY_COST * factor
+        if p.pregnant:
+            month_expense += 800.0                   # 产检、营养、待产用品
         if p.married:
             month_expense *= 1.30
         if p.age < 16:
@@ -1165,7 +1226,10 @@ class Simulator:
             return
         # 体质影响每日扣血（体质弱的人病得更重）
         sus = constitution_susceptibility(p.constitution)
-        hp_factor = round(0.75 + 0.25 * sus, 2)
+        hp_factor = round((0.75 + 0.25 * sus) * DISEASE_HEALTH_IMPACT, 3)
+        # 怀孕期间用药受限，病情更难受
+        if p.pregnant:
+            hp_factor = round(hp_factor * 1.15, 3)
         for disease in list(p.diseases):
             hp_loss = round(disease["hp_per_day"] * hp_factor, 2)
             happy_loss = disease["happy_per_day"]
@@ -1364,6 +1428,278 @@ class Simulator:
             delta, _ = p.apply_effects({"health": -round(loss, 2)}, dice=self.dice)
             report.accumulate(delta)
             report.add_line("年老体衰：健康 %s" % fmt_signed(delta["health"], 1))
+
+    # ------------------------------------------------------------------
+    # 家庭 / 生育系统
+    # ------------------------------------------------------------------
+    def can_be_intimate(self):
+        """
+        检查能否进行「夫妻亲密」，返回 (是否允许, 提示文本)。
+        现实向限制：成年 + 已婚（或有伴侣）+ 不在孕期 + 每天最多 1 次。
+        """
+        p = self.player
+        if p.dead:
+            return False, "人物已经离世。"
+        if p.age < INTIMACY_MIN_AGE:
+            return False, "还没有成年（需 %d 岁以上）。" % INTIMACY_MIN_AGE
+        if not p.married and not p.partner_name:
+            return False, ("你还是单身。\n\n"
+                           "需要先经历恋爱、结婚（16 岁后可恋爱，22 岁后可结婚）。")
+        if p.pregnant:
+            return False, "伴侣正在孕期，医生建议静养。"
+        if getattr(p, "intimacy_today", 0) >= INTIMACY_MAX_PER_DAY:
+            return False, "今天已经有过亲密时光了，注意身体。"
+        if p.health < 20:
+            return False, "身体太虚弱了，先养好身体吧。"
+        return True, ""
+
+    def do_intimacy(self, contraception=None):
+        """
+        「夫妻亲密」：提升幸福度，并按概率受孕（可指定避孕方式）。
+        返回结果卡 dict。
+        """
+        p = self.player
+        ok, why = self.can_be_intimate()
+        if not ok:
+            return {"tone": "warn", "text": why}
+        report = DailyReport(p)
+        report.event_name = "夫妻亲密"
+        if contraception is not None and contraception in [o[0] for o in CONTRACEPTION_OPTIONS]:
+            p.contraception = contraception
+
+        # ---- 幸福提升 ----
+        happy_gain = INTIMACY_HAPPY_BASE
+        if p.married:
+            happy_gain += INTIMACY_HAPPY_MARRIED_BONUS
+        if p.health >= 70:
+            happy_gain += 2
+        if p.happy < 40:
+            happy_gain += 2      # 情绪低落时安慰作用更明显
+        roll = self.dice.d10("亲密感受")
+        self.dice.remember(roll, "亲密感受")
+        if roll.value >= 8:
+            happy_gain += 3
+            report.add_line("你们聊了很久，彼此都觉得更亲近了。")
+        elif roll.value <= 2:
+            happy_gain = max(2, happy_gain - 3)
+            report.add_line("今天两人都有些疲惫，只是安静地靠在一起。")
+        delta, _ = p.apply_effects({"happy": happy_gain, "health": +1}, dice=self.dice)
+        report.accumulate(delta)
+        p.intimacy_today = p.intimacy_today + 1
+        p.intimacy_last_day = p.total_days
+        report.add_line("亲密时光：幸福 %s，健康 %s（避孕方式：%s）" % (
+            fmt_signed(delta["happy"], 1), fmt_signed(delta["health"], 1), p.contraception))
+
+        # ---- 受孕判定 ----
+        conceive, note = self._try_conceive()
+        report.add_line(note)
+        if conceive:
+            report.add_line("例假迟迟没来，你们买了验孕棒——两条杠。")
+            p.add_milestone("确认怀孕（%d 岁）" % p.age, tag="生育")
+            if self.log:
+                self.log.milestone(p, "确认怀孕", "生育")
+        self.last_report = report
+        return {
+            "tone": "intimacy",
+            "title": "夫妻亲密",
+            "report": report,
+            "settlement_lines": list(report.lines),
+            "dice_lines": self.dice.today_lines(),
+            "conceived": conceive,
+            "action_points": p.action_points,
+        }
+
+    def _try_conceive(self):
+        """
+        受孕判定：年龄 + 避孕成功率 + 已生育数量 + 健康状况。
+        返回 (是否受孕, 说明文本)
+        """
+        p = self.player
+        if p.pregnant:
+            return False, "目前已在孕期中。"
+        if p.age < CONCEPTION_MIN_AGE:
+            return False, "年龄还太小，暂时不考虑生育。"
+        if p.age > CONCEPTION_MAX_AGE_FEMALE:
+            return False, "医学上已过最佳生育年龄，很难再怀孕（%d 岁）。" % p.age
+        if len(p.child_list) >= MAX_CHILDREN:
+            return False, "家里孩子已经很多了，再添一个实在养不起。"
+        base = conception_rate(p.age)
+        rate_map = {name: success for name, success, _desc in CONTRACEPTION_OPTIONS}
+        protect = rate_map.get(p.contraception, 0.0)
+        chance = base * (1.0 - protect)
+        if p.health < 50:
+            chance *= 0.6
+        if p.happy < LOW_HAPPY_THRESHOLD:
+            chance *= 0.7
+        if len(p.child_list) >= 2:
+            chance *= 0.6 ** (len(p.child_list) - 1)   # 孩子越多越不容易再怀
+        roll = self.dice.roll(10000, 1, 0, "受孕判定")
+        self.dice.remember(roll, "受孕判定")
+        threshold = chance * 10000.0
+        if roll.value <= max(0.5, threshold):
+            p.pregnant = True
+            p.pregnancy_days = 0
+            p.pregnancy_count += 1
+            p.conception_history.append({
+                "date": p.date_full, "age": p.age,
+                "contraception": p.contraception,
+            })
+            return True, "受孕判定：%d ≤ %.0f（避孕方式：%s）→ 怀孕了！" % (
+                roll.value, threshold, p.contraception)
+        return False, "受孕判定：%d > %.0f（避孕方式：%s）→ 这次没有怀上。" % (
+            roll.value, threshold, p.contraception)
+
+    def settle_pregnancy_phase(self, report):
+        """
+        孕期结算：每"月"推进一次，9 个月（270 天）后分娩。
+        期间有孕期反应、流产风险与分娩风险，孩子会继承父母体质。
+        """
+        p = self.player
+        if not p.pregnant or p.dead:
+            return
+        p.pregnancy_days += 1
+        if p.pregnancy_days % DAYS_PER_MONTH != 0:
+            return
+        month = p.pregnancy_days // DAYS_PER_MONTH
+        roll = self.dice.d10("孕期反应")
+        self.dice.remember(roll, "孕期反应")
+        if month <= 3:
+            if roll.value <= 6:
+                delta, _ = p.apply_effects({"health": -1.2, "happy": -2}, dice=self.dice)
+                report.accumulate(delta)
+                report.add_line("孕期第 %d 月：孕吐反应明显，健康 %s、幸福 %s" % (
+                    month, fmt_signed(delta["health"], 1), fmt_signed(delta["happy"], 1)))
+            else:
+                report.add_line("孕期第 %d 月：反应不重，一切正常。" % month)
+        elif month <= 6:
+            delta, _ = p.apply_effects({"happy": +3, "health": -0.5}, dice=self.dice)
+            report.accumulate(delta)
+            report.add_line("孕期第 %d 月：肚子一天天大起来，家里开始准备婴儿用品。" % month)
+        else:
+            if roll.value <= 4:
+                delta, _ = p.apply_effects({"health": -2, "happy": -2}, dice=self.dice)
+                report.accumulate(delta)
+                report.add_line("孕期第 %d 月：腰酸背痛、睡不好，健康 %s" % (
+                    month, fmt_signed(delta["health"], 1)))
+            else:
+                report.add_line("孕期第 %d 月：产检一切正常，医生说随时可能发动。" % month)
+
+        # ---- 流产风险（年龄越大、健康越差越高）----
+        if month <= 4:
+            risk = birth_risk(p.age) * 0.35 + (0.03 if p.health < 50 else 0.0)
+            check = self.dice.roll(10000, 1, 0, "流产判定")
+            if check.value <= risk * 10000.0:
+                p.pregnant = False
+                p.pregnancy_days = 0
+                p.miscarriage += 1
+                delta, _ = p.apply_effects({"health": -6, "happy": -18}, dice=self.dice)
+                report.accumulate(delta)
+                report.add_line("【不幸】孕期第 %d 月发生了流产。健康 %s、幸福 %s" % (
+                    month, fmt_signed(delta["health"], 1), fmt_signed(delta["happy"], 1)))
+                p.add_milestone("流产（%d 岁）" % p.age, tag="生育")
+                if self.log:
+                    self.log.milestone(p, "流产", "生育")
+                return
+
+        # ---- 到预产期：分娩 ----
+        if p.pregnancy_days >= PREGNANCY_DAYS:
+            self._deliver(report)
+
+    def _deliver(self, report):
+        """分娩：判定并发症与孩子情况，生成孩子档案并加入家庭。"""
+        p = self.player
+        risk = birth_risk(p.age)
+        if p.health < 50:
+            risk *= 1.5
+        if p.diseases:
+            risk *= 1.3
+        roll = self.dice.roll(10000, 1, 0, "分娩判定")
+        self.dice.remember(roll, "分娩判定")
+        p.pregnant = False
+        p.pregnancy_days = 0
+        p.birth_count += 1
+        gender_roll = self.dice.roll(2, 1, 0, "性别判定")
+        baby_gender = "男孩" if gender_roll.value == 1 else "女孩"
+        baby_name = self.dice.pick(CHILD_NAME_POOL, "取名")[0]
+        # 孩子体质：父母体质均值 + 随机波动（体现遗传）
+        base_con = (p.constitution + CONSTITUTION_MEAN) / 2.0
+        inherit = self.dice.roll(10000, 1, 0, "体质遗传")
+        baby_con = max(CONSTITUTION_MIN, min(CONSTITUTION_MAX,
+                                            base_con + (inherit.value - 5000) / 420.0))
+        child = {
+            "name": baby_name, "gender": baby_gender,
+            "birth_date": p.date_full, "constitution": round(baby_con, 1),
+            "mother_age": p.age,
+        }
+        p.child_list.append(child)
+        p.children = len(p.child_list)
+        happy_gain = 22
+        health_cost = 6.0
+        if roll.value <= risk * 10000.0:
+            severity = self.dice.d10("并发症程度").value
+            if severity >= 8:
+                health_cost += 14
+                happy_gain = 8
+                report.add_line("【难产】分娩过程中出现并发症，母子都经历了危险。")
+            else:
+                health_cost += 6
+                happy_gain = 14
+                report.add_line("【并发症】分娩不太顺利，好在医生处理及时。")
+        delta, _ = p.apply_effects({"health": -health_cost, "happy": happy_gain,
+                                    "money": -3000.0}, dice=self.dice)
+        report.accumulate(delta)
+        report.add_line("【喜讯】%s出生了（%s，先天体质 %.1f 分）。" % (
+            baby_name, baby_gender, baby_con))
+        report.add_line("分娩消耗：健康 %s，幸福 %s，生育与住院花费约 3000" % (
+            fmt_signed(delta["health"], 1), fmt_signed(delta["happy"], 1)))
+        p.add_milestone("孩子出生：%s（%s）" % (baby_name, baby_gender), tag="生育")
+        if self.log:
+            self.log.milestone(p, "孩子出生：%s（%s，体质 %.1f）" % (
+                baby_name, baby_gender, baby_con), "生育")
+
+    def settle_child_phase(self, report):
+        """子女成长结算：每年生日时给出孩子的成长反馈（影响父母幸福）。"""
+        p = self.player
+        if not p.child_list:
+            return
+        if not (p.month == p.birth_month and p.day == p.birth_day):
+            return
+        for child in p.child_list:
+            age = self._child_age(child)
+            if age in (1, 3, 6, 12, 18):
+                roll = self.dice.d10("孩子成长")
+                if roll.value >= 7:
+                    delta, _ = p.apply_effects({"happy": +4}, dice=self.dice)
+                    report.accumulate(delta)
+                    report.add_line("%s 今年 %d 岁了，懂事又健康，你心里很满足。" % (
+                        child["name"], age))
+                else:
+                    delta, _ = p.apply_effects({"happy": -2, "money": -300}, dice=self.dice)
+                    report.accumulate(delta)
+                    report.add_line("%s 今年 %d 岁了，正是最费心的时候。" % (
+                        child["name"], age))
+                if age == 18:
+                    p.add_milestone("%s 成年了" % child["name"], tag="家庭")
+                    if self.log:
+                        self.log.milestone(p, "%s 成年了" % child["name"], "家庭")
+
+    def _child_age(self, child):
+        """按"出生时母亲年龄"推算孩子当前年龄（稳健，不依赖日期解析）。"""
+        mother_age = int(child.get("mother_age", 0))
+        return max(0, self.player.age - mother_age)
+
+    def children_summary(self):
+        """子女概览文本。"""
+        p = self.player
+        if not p.child_list:
+            return "暂无子女"
+        lines = []
+        for child in p.child_list:
+            lines.append("    · %s（%s）%d 岁，先天体质 %.1f 分，出生于 %s" % (
+                child.get("name", "孩子"), child.get("gender", "未知"),
+                self._child_age(child), child.get("constitution", 50.0),
+                child.get("birth_date", "")))
+        return "\n".join(lines)
 
     def settle_mood_phase(self, report):
         """幸福过低 debuff：长期低于阈值会持续扣健康。"""
@@ -1753,12 +2089,16 @@ class Simulator:
 
     # ------------------------------------------------------------------
     def _finish_day(self, report, keep_pending=False):
-        """事件结算之后的收尾：疾病 → 体温 → 情绪 → 衰老 → 恢复 → 抢救 → 死亡 → 日志。"""
+        """事件结算之后的收尾：疾病 → 孕期 → 体温 → 情绪/子女 → 衰老 → 恢复 → 抢救 → 死亡 → 日志。"""
         self.settle_disease_phase(report)
+        if not self.player.dead:
+            self.settle_pregnancy_phase(report)
         if not self.player.dead:
             self.settle_env_phase(report)
         if not self.player.dead:
             self.settle_mood_phase(report)
+        if not self.player.dead:
+            self.settle_child_phase(report)
         if not self.player.dead:
             self.settle_aging_phase(report)
         if not self.player.dead:
@@ -1869,6 +2209,14 @@ class Simulator:
             self._do_social(report, decay)
         elif action_key == "exercise":
             self._do_exercise(report, decay)
+        elif action_key == "parenting":
+            result = self._do_parenting(report, decay)
+            if result is not None:
+                p.action_points += cost
+                p.actions_today = max(0, p.actions_today - 1)
+                tally[action_key] = max(0, tally[action_key] - 1)
+                p.action_tally = tally
+                return result
         else:
             p.action_points += cost
             p.actions_today = max(0, p.actions_today - 1)
@@ -2060,6 +2408,36 @@ class Simulator:
         p.stats["exercise_today"] = p.stats.get("exercise_today", 0) + 1
         p.stats["rest_streak"] = 0
 
+    def _do_parenting(self, report, decay=1.0):
+        """
+        陪伴孩子：提升幸福、让孩子成长得更好（消耗当天时间）。
+        没有孩子时返回提示卡（由上层退回行动点）。
+        """
+        p = self.player
+        if not p.child_list:
+            return {"tone": "warn",
+                    "text": "你还没有孩子。\n\n"
+                            "结婚后可以通过「夫妻亲密」迎接新生命。"}
+        roll = self.dice.d10("陪伴效果")
+        self.dice.remember(roll, "陪伴效果")
+        happy_gain = (4 + roll.value * 0.6) * decay
+        cost = round(80.0 * decay, 2)
+        effects = {"happy": happy_gain, "money": -cost}
+        if roll.value >= 8:
+            effects["happy"] = happy_gain + 4
+            report.add_line("你陪孩子玩了整整一下午，笑声一直没停过。")
+        elif roll.value <= 2:
+            report.add_line("孩子今天闹脾气，你怎么哄都不行。")
+            effects["happy"] = max(1.0, happy_gain - 3)
+        delta, _ = p.apply_effects(effects, dice=self.dice)
+        report.accumulate(delta)
+        # 孩子成长值累积（用于体现"陪伴"的长期作用）
+        p.stats["parenting_points"] = p.stats.get("parenting_points", 0) + int(roll.value)
+        report.add_line("陪伴孩子：幸福 %s，花费 %.2f（累计陪伴 %d 点）" % (
+            fmt_signed(delta["happy"], 1), cost, p.stats.get("parenting_points", 0)))
+        p.stats["rest_streak"] = 0
+        return None
+
     # ------------------------------------------------------------------
     # 推进一天 / 跳过这一天
     # ------------------------------------------------------------------
@@ -2105,16 +2483,30 @@ class Simulator:
         self.roll_ambient()
         self.settle_carried(report)
         self.auto_progress_stages(report)
+        # ---- 每天的身体与家庭变化（与事件结算保持同一条流水线）----
+        if not self.check_death(report):
+            self.settle_pregnancy_phase(report)
+        if not p.dead:
+            self.settle_mood_phase(report)
+        if not p.dead:
+            self.settle_child_phase(report)
+        if not p.dead:
+            self.settle_aging_phase(report)
+        if not p.dead:
+            self.settle_recover_phase(report)
+        if not p.dead:
+            self.settle_hospital_phase(report)
         if self.check_death(report):
             self.last_report = report
             self.pending = None
             self._log_delta(report)
             return {"tone": "dead", "text": "\n".join(report.lines), "report": report}
 
-        # ---- 新的一天：重置行动点 ----
+        # ---- 新的一天：重置行动点与"当天计数" ----
         p.action_points = ACTION_POINTS_PER_DAY
         p.actions_today = 0
         p.action_tally = {}
+        p.intimacy_today = 0
         p.stats.pop("exercise_today", None)
 
         self.last_report = report

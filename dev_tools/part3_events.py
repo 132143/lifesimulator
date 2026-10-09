@@ -756,12 +756,27 @@ _ev("school_commute", "上学路上", "环境", 800,
 # 8.3 情感社交类事件（婚恋、社交；婴幼儿不会说话、不能独自出门，故有严格年龄限制）
 # ------------------------------------------------------------------------------
 
+#: 伴侣姓名池（结婚时随机取名）
+PARTNER_NAME_POOL = [
+    "晓雯", "静怡", "雅琴", "思颖", "欣妍", "梦琪", "文博", "皓宇", "子墨", "浩然",
+    "嘉俊", "志远", "雨桐", "舒然", "书瑶", "亦辰", "若岚", "明轩", "佳怡", "承泽",
+]
+
+
 def _func_marry():
+    """结婚：登记婚姻状态、生成伴侣姓名与结婚日期（供生育系统使用）。"""
     def _apply(player):
         if player.married:
             return []
         player.married = True
-        return ["你结婚了，从此有了一个家。"]
+        if not getattr(player, "partner_name", ""):
+            try:
+                idx = int(player.rng.random() * len(PARTNER_NAME_POOL))
+                player.partner_name = PARTNER_NAME_POOL[idx % len(PARTNER_NAME_POOL)]
+            except Exception:
+                player.partner_name = "伴侣"
+        player.married_date = player.date_full
+        return ["你结婚了，伴侣是%s，从此有了一个家。" % player.partner_name]
     return _apply
 
 
