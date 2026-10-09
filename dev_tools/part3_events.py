@@ -1342,6 +1342,33 @@ def roll_daily_event(dice, player, engine=None):
         3. 大类受人生阶段限制（孩子不会遇到职场与婚恋事件）
         4. 最后用 d10000 在对应大类里按权重抽具体事件
     """
+    # ---- 第〇步：模组每日事件接管（daily_event_hook）----
+    # 遍历已加载模组，若其 daily_event_hook 返回事件 id 或事件字典，
+    # 则跳过下方“是否有事 / 大类 / 权重”的普通抽签，直接强制触发该事件。
+    for _mod_info in MOD_REGISTRY["loaded"].values():
+        _mod_obj = _mod_info.get("object")
+        if _mod_obj is None:
+            continue
+        try:
+            _hook_ret = _mod_obj.daily_event_hook(player, dice)
+        except Exception:
+            _hook_ret = None
+        if _hook_ret is None:
+            continue
+        if isinstance(_hook_ret, str):
+            _hook_ev = EVENTS.get(_hook_ret)
+            if _hook_ev is None:
+                continue
+        elif isinstance(_hook_ret, dict):
+            _hook_ev = _hook_ret
+        else:
+            continue
+        _hres = dice.d100("模组事件接管")
+        return {"event": _hook_ev,
+                "category": _hook_ev.get("category", "日常"),
+                "roll": _hres, "secret_reason": None,
+                "internal": _hook_ev.get("id", ""), "no_event": False,
+                "chance": event_chance_of(player)}
     # ---- 第一步：今天有没有事 ----
     chance_roll = dice.roll(10000, 1, 0, "事件发生判定")
     chance = event_chance_of(player)

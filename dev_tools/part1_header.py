@@ -69,7 +69,7 @@ else:
 # 1. 全局常量配置
 # ==============================================================================
 
-APP_NAME = "弹窗式文字人生模拟器"
+APP_NAME = "人生模拟器"
 APP_VERSION = "1.0.0"
 
 #: 游戏数据目录：源码、存档、日志统一存放在这里；程序启动时自动检测并创建
@@ -904,8 +904,27 @@ def stage_name(stage_id):
 
 
 def stage_of_age(age):
-    """按年龄返回"标准流程"下的阶段 id（用于时间跳跃与校验）。"""
+    """
+    按年龄返回阶段 id（用于初始化兜底与时间跳跃）。
+    优先使用**模组注册的阶段**：如果已加载的模组用自己的时间线整体替换了人生流程
+    （例如"哈利·波特"模组：魔法童年 0-10 → 录取 11 → 求学 → 成年 → 暮年），
+    就按模组阶段的年龄区间判定，避免被原版学龄兜底规则覆盖。
+    """
     a = int(age)
+    # ---- 模组阶段优先（按年龄区间匹配，取区间最贴合的一个）----
+    mod_stages = []
+    for _mid, _info in MOD_REGISTRY.get("loaded", {}).items():
+        for _st in (_info.get("stages") or []):
+            try:
+                _lo = int(_st.get("start", 0))
+                _hi = int(_st.get("end", 0))
+            except Exception:
+                continue
+            if _lo <= a <= _hi:
+                mod_stages.append((_hi - _lo, _st.get("id")))
+    if mod_stages:
+        mod_stages.sort()
+        return mod_stages[0][1]
     if a <= 2:
         return "infant"
     if a <= 4:

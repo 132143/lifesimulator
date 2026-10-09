@@ -95,6 +95,22 @@ EXE_README = """========================================================
 """
 
 
+def collect_mod_files(root):
+    """收集 mods/ 目录下的模组文件（发行包要带上，否则模组不会加载）。"""
+    out = []
+    mods_dir = os.path.join(root, "mods")
+    if not os.path.isdir(mods_dir):
+        return out
+    for dirpath, _dirnames, filenames in os.walk(mods_dir):
+        for fn in sorted(filenames):
+            if not fn.endswith(".py"):
+                continue
+            full = os.path.join(dirpath, fn)
+            rel = os.path.relpath(full, root).replace("\\", "/")
+            out.append((rel, rel))
+    return out
+
+
 def bat_bytes(text):
     """批处理脚本转成 CRLF + GBK（中文 Windows cmd 专用），不带 BOM。"""
     text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\r\n")
@@ -271,6 +287,17 @@ def main():
             target = os.path.join(stage, dst)
             os.makedirs(os.path.dirname(target), exist_ok=True)
             shutil.copy2(full, target)
+    # 模组文件（若项目里有 mods/ 就一起带上）
+    mod_files = collect_mod_files(root)
+    for src_rel, dst_rel in mod_files:
+        full = os.path.join(root, src_rel)
+        target = os.path.join(stage, dst_rel)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "wb") as fh:
+            fh.write(open(full, "rb").read())
+    if mod_files:
+        print("    已带上 %d 个模组文件（mods/）" % len(mod_files))
+
     # 存档与模组空目录
     os.makedirs(os.path.join(stage, "save", "mods"), exist_ok=True)
     with open(os.path.join(stage, "版本信息.txt"), "w", encoding="utf-8") as fh:

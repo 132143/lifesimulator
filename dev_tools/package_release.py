@@ -60,6 +60,22 @@ PORTABLE_MARKER_TEXT = """这个文件代表"便携模式"。
 （删掉它，游戏就会改用系统默认目录保存）"""
 
 
+def collect_mod_files(root):
+    """收集 mods/ 目录下的模组文件（发行包要带上，否则模组不会加载）。"""
+    out = []
+    mods_dir = os.path.join(root, "mods")
+    if not os.path.isdir(mods_dir):
+        return out
+    for dirpath, _dirnames, filenames in os.walk(mods_dir):
+        for fn in sorted(filenames):
+            if not fn.endswith(".py"):
+                continue
+            full = os.path.join(dirpath, fn)
+            rel = os.path.relpath(full, root).replace("\\", "/")
+            out.append((rel, rel))
+    return out
+
+
 def bat_bytes(text):
     """
     把批处理脚本文本转成"中文 Windows cmd 能正确解析"的字节：
@@ -125,6 +141,7 @@ def find_project_root():
 def build_release(root, out_dir, zip_name, with_source=False, keep_stage=False):
     """构建压缩包，返回 (zip 路径, 打包文件数, 总字节数)。"""
     files = list(PLAYER_FILES)
+    files += collect_mod_files(root)          # 自动带上 mods/ 下的模组
     if with_source:
         files += DEV_FILES
 

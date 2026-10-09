@@ -69,7 +69,7 @@ else:
 # 1. 全局常量配置
 # ==============================================================================
 
-APP_NAME = "弹窗式文字人生模拟器"
+APP_NAME = "人生模拟器"
 APP_VERSION = "1.0.0"
 
 #: 游戏数据目录：源码、存档、日志统一存放在这里；程序启动时自动检测并创建
@@ -904,8 +904,27 @@ def stage_name(stage_id):
 
 
 def stage_of_age(age):
-    """按年龄返回"标准流程"下的阶段 id（用于时间跳跃与校验）。"""
+    """
+    按年龄返回阶段 id（用于初始化兜底与时间跳跃）。
+    优先使用**模组注册的阶段**：如果已加载的模组用自己的时间线整体替换了人生流程
+    （例如"哈利·波特"模组：魔法童年 0-10 → 录取 11 → 求学 → 成年 → 暮年），
+    就按模组阶段的年龄区间判定，避免被原版学龄兜底规则覆盖。
+    """
     a = int(age)
+    # ---- 模组阶段优先（按年龄区间匹配，取区间最贴合的一个）----
+    mod_stages = []
+    for _mid, _info in MOD_REGISTRY.get("loaded", {}).items():
+        for _st in (_info.get("stages") or []):
+            try:
+                _lo = int(_st.get("start", 0))
+                _hi = int(_st.get("end", 0))
+            except Exception:
+                continue
+            if _lo <= a <= _hi:
+                mod_stages.append((_hi - _lo, _st.get("id")))
+    if mod_stages:
+        mod_stages.sort()
+        return mod_stages[0][1]
     if a <= 2:
         return "infant"
     if a <= 4:
@@ -3620,6 +3639,34 @@ def roll_daily_event(dice, player, engine=None):
         3. 大类受人生阶段限制（孩子不会遇到职场与婚恋事件）
         4. 最后用 d10000 在对应大类里按权重抽具体事件
     """
+    # ---- 第〇步：模组每日事件接管（daily_event_hook）----
+    # 遍历已加载模组，若其 daily_event_hook 返回事件 id 或事件字典，
+    # 则跳过下方“是否有事 / 大类 / 权重”的普通抽签，直接强制触发该事件。
+    for _mod_info in MOD_REGISTRY["loaded"].values():
+        _mod_obj = _mod_info.get("object")
+        if _mod_obj is None:
+            continue
+        try:
+            _hook_ret = _mod_obj.daily_event_hook(player, dice)
+        except Exception:
+            _hook_ret = None
+        if _hook_ret is None:
+            continue
+        if isinstance(_hook_ret, str):
+            _hook_ev = EVENTS.get(_hook_ret)
+            if _hook_ev is None:
+                continue
+        elif isinstance(_hook_ret, dict):
+            _hook_ev = _hook_ret
+        else:
+            continue
+        _hres = dice.d100("模组事件接管")
+        return {"event": _hook_ev,
+                "category": _hook_ev.get("category", "日常"),
+                "roll": _hres, "secret_reason": None,
+                "internal": _hook_ev.get("id", ""), "no_event": False,
+                "chance": event_chance_of(player)}
+
     # ---- 第一步：今天有没有事 ----
     chance_roll = dice.roll(10000, 1, 0, "事件发生判定")
     chance = event_chance_of(player)
@@ -3742,7 +3789,9 @@ class Player:
         self.birth_day = 1                   # 生日（日）
 
         # ---- 人生阶段与学业 ----
-        self.stage = "infant"                # 当前人生阶段 id
+        # 当前人生阶段 id：优先按"年龄 + 已加载模组的阶段表"推断，
+        # 这样模组（例如哈利·波特）整体替换人生流程时不会被原版兜底规则覆盖
+        self.stage = stage_of_age(INIT_AGE)
         self.stage_history = []              # 阶段变化记录
         self.education = []                  # 学历记录（幼儿园/小学/初中/高中/大学/研究生）
         self.exam_results = {}               # 考试成绩（中考/高考/考研）
