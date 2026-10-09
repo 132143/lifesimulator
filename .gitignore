@@ -9,8 +9,14 @@ venv/
 save.json
 save.json.tmp
 life_log.txt
+save/
 data/
 _selftest/
+
+# 打包产物
+release/
+dist/
+build/*.spec
 
 # 编辑器
 .vscode/*.log

@@ -290,8 +290,14 @@ MIN_ILLNESS_GAP_DAYS = 25
 
 
 # ==============================================================================
-# 2. 路径工具：自动检测并创建数据目录
+# 2. 路径工具：自动检测并创建数据目录（支持"便携模式"）
 # ==============================================================================
+
+#: 便携模式标记文件：存在它 = 存档放在"程序所在目录"（解压即玩、存档同目录）
+PORTABLE_MARKER = "portable.txt"
+#: 便携模式下的存档子目录名
+PORTABLE_SAVE_DIR = "save"
+
 
 def _try_makedirs(path):
     """尝试创建目录，成功返回 True，失败返回 False（不抛异常）。"""
@@ -320,13 +326,63 @@ def _dir_writable(path):
         return False
 
 
-def resolve_base_dir():
+def program_dir():
+    """程序（脚本或打包后的 exe）所在目录。"""
+    try:
+        if getattr(sys, "frozen", False):          # PyInstaller 等打包后的 exe
+            return os.path.dirname(os.path.abspath(sys.executable))
+        return os.path.dirname(os.path.abspath(__file__))
+    except Exception:
+        return os.getcwd()
+
+
+def portable_dir():
+    """便携模式的数据目录（程序目录下的 save/）。"""
+    return os.path.join(program_dir(), PORTABLE_SAVE_DIR)
+
+
+def _looks_like_extracted_package():
     """
-    解析游戏数据目录：
-        1. 优先使用环境变量 LIFESIM_HOME（方便测试 / 多开）
-        2. 否则使用 D:\\desktop\\LifeSimulator
-        3. 若目标盘符不存在或不可写，依次退化为
-           <用户主目录>\\LifeSimulator  ->  源码所在目录\\data
+    判断当前是否"从压缩包里解压出来直接运行"（便携包）。
+    依据：程序目录里除了源码，还带着分发用的 README / 启动脚本等文件。
+    """
+    base = program_dir()
+    for name in ("run_game.bat", "启动游戏.bat", "readme.txt", "使用说明.txt",
+                 "便携说明.txt", PORTABLE_MARKER):
+        if os.path.isfile(os.path.join(base, name)):
+            return True
+    return False
+
+
+def is_portable_mode():
+    """
+    是否使用便携模式（存档放在程序同目录的 save/ 下）：
+        1. 显式禁用：程序目录存在 "no_portable.txt"  -> 强制用默认数据目录
+        2. 显式启用：程序目录存在 "portable.txt"     -> 便携
+        3. 自动判断：程序目录里有"解压包标志文件"（README/启动脚本等），
+           或者已经存在 save/ 目录                        -> 便携
+    """
+    base = program_dir()
+    if os.path.isfile(os.path.join(base, "no_portable.txt")):
+        return False
+    if os.path.isfile(os.path.join(base, PORTABLE_MARKER)):
+        return True
+    if os.path.isdir(os.path.join(base, PORTABLE_SAVE_DIR)):
+        return True
+    return _looks_like_extracted_package()
+
+
+def resolve_base_dir(force_portable=None):
+    """
+    解析游戏数据目录（存档、日志、模组的存放位置）。
+
+    优先级：
+        1. 环境变量 LIFESIM_HOME（调试 / 多开用）
+        2. 便携模式（解压即玩）：程序目录下的 save/ —— 存档与游戏同文件夹
+        3. 默认目录 D:\\desktop\\LifeSimulator（源码开发时的默认位置）
+        4. 兜底：<用户主目录>\\LifeSimulator  ->  程序目录\\data
+
+    force_portable: True/False 可强制开关便携模式（None = 自动判断）
     返回 (目录, 说明信息列表)。
     """
     notes = []
@@ -335,15 +391,21 @@ def resolve_base_dir():
     if env_dir:
         candidates.append(env_dir)
         notes.append("检测到环境变量 %s，使用目录：%s" % (ENV_BASE_DIR_KEY, env_dir))
-    candidates.append(DEFAULT_BASE_DIR)
 
+    portable = is_portable_mode() if force_portable is None else bool(force_portable)
+    if portable:
+        pdir = portable_dir()
+        candidates.append(pdir)
+        notes.append("便携模式：存档与日志保存在程序同目录（%s）" % PORTABLE_SAVE_DIR)
+
+    candidates.append(DEFAULT_BASE_DIR)
     home = os.path.expanduser("~") or "."
     candidates.append(os.path.join(home, FALLBACK_DIR_NAME))
-    candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+    candidates.append(os.path.join(program_dir(), "data"))
 
     for path in candidates:
         parent = os.path.dirname(os.path.abspath(path))
-        if not os.path.isdir(parent) and not _try_makedirs(parent):
+        if parent and not os.path.isdir(parent) and not _try_makedirs(parent):
             notes.append("无法创建上级目录：%s（跳过）" % parent)
             continue
         if not _try_makedirs(path):
@@ -352,7 +414,9 @@ def resolve_base_dir():
         if not _dir_writable(path):
             notes.append("数据目录不可写：%s（跳过）" % path)
             continue
-        if path != DEFAULT_BASE_DIR:
+        if portable and os.path.abspath(path) == os.path.abspath(portable_dir()):
+            notes.append("提示：解压即玩，存档就在游戏文件夹里，整个文件夹可以随意拷贝。")
+        elif path != DEFAULT_BASE_DIR:
             notes.append("提示：目标目录不可用，已自动切换为 %s" % path)
         return path, notes
 
@@ -8202,7 +8266,13 @@ BANNER = """
 def main(argv=None):
     argv = list(argv if argv is not None else sys.argv[1:])
     make_console_safe()
-    base_dir, notes = resolve_base_dir()
+    # ---- 便携模式开关：--portable 存档放程序同目录；--no-portable 强制用默认目录 ----
+    force_portable = None
+    if "--portable" in argv:
+        force_portable = True
+    elif "--no-portable" in argv:
+        force_portable = False
+    base_dir, notes = resolve_base_dir(force_portable=force_portable)
     # 让模组发现机制知道数据目录（mods 子目录会被自动扫描）
     globals()["__LIFESIM_BASE_DIR__"] = base_dir
     try:
@@ -8245,6 +8315,9 @@ def main(argv=None):
 
     print(BANNER)
     print("数据目录：%s" % base_dir)
+    print("运行模式：%s" % ("便携模式（存档与游戏同文件夹）" if
+                          os.path.abspath(base_dir) == os.path.abspath(portable_dir())
+                          else "默认模式"))
     for note in notes:
         print("提示：%s" % note)
     print("存档文件：%s" % safe_join(base_dir, SAVE_FILE_NAME))

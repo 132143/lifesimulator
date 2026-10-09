@@ -1,0 +1,1 @@
+﻿开发目录：强制使用默认数据目录 D:\desktop\LifeSimulator（不启用便携模式）

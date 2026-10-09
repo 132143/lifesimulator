@@ -1859,7 +1859,13 @@ BANNER = """
 def main(argv=None):
     argv = list(argv if argv is not None else sys.argv[1:])
     make_console_safe()
-    base_dir, notes = resolve_base_dir()
+    # ---- 便携模式开关：--portable 存档放程序同目录；--no-portable 强制用默认目录 ----
+    force_portable = None
+    if "--portable" in argv:
+        force_portable = True
+    elif "--no-portable" in argv:
+        force_portable = False
+    base_dir, notes = resolve_base_dir(force_portable=force_portable)
     # 让模组发现机制知道数据目录（mods 子目录会被自动扫描）
     globals()["__LIFESIM_BASE_DIR__"] = base_dir
     try:
@@ -1902,6 +1908,9 @@ def main(argv=None):
 
     print(BANNER)
     print("数据目录：%s" % base_dir)
+    print("运行模式：%s" % ("便携模式（存档与游戏同文件夹）" if
+                          os.path.abspath(base_dir) == os.path.abspath(portable_dir())
+                          else "默认模式"))
     for note in notes:
         print("提示：%s" % note)
     print("存档文件：%s" % safe_join(base_dir, SAVE_FILE_NAME))

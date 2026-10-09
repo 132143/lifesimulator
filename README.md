@@ -171,7 +171,40 @@
 
 ---
 
-## 三、模组系统（名著模组 / 插件）
+## 三、打包分享给朋友（解压即玩、存档同文件夹）
+
+游戏内置**便携模式**：只要程序目录里有 `portable.txt`（或 `save\` 目录、或 `启动游戏.bat` 等分发标志文件），
+存档就会写进**程序同目录的 `save\`** 里，整个文件夹可以随意拷贝 / 发人 / 放 U 盘。
+
+一条命令打包：
+
+```bat
+python dev_tools\package_release.py
+→ release\LifeSimulator_v3.0_便携版.zip      （约 126 KB）
+
+python dev_tools\package_release.py --with-source
+→ release\LifeSimulator_v3.0_含源码.zip      （约 275 KB，附带模块化源码与测试）
+```
+
+**压缩包内容（玩家版 10 个条目）**
+
+| 包内路径 | 作用 |
+| --- | --- |
+| `LifeSimulator.py` | 游戏本体（单文件，约 400 KB） |
+| `启动游戏.bat` | 双击即玩：自动找 Python、自动建 `save\`、传 `--portable` |
+| `portable.txt` | 便携模式标记（存档放同目录） |
+| `使用说明.txt` | 给朋友的说明（启动方式、没 Python 怎么办、存档在哪） |
+| `README.md` / `docs\*.md` | 完整文档与模组/打包指南 |
+| `save\`、`save\mods\` | 空目录：存档与模组位置 |
+
+**朋友的体验**：解压 → 双击 `启动游戏.bat` → 玩 → 存档自动出现在 `save\`。
+只需要装一次 Python（不用 pip 装任何东西）。
+
+详细说明见 [`docs\打包与分发指南.md`](docs/打包与分发指南.md)（含免安装 exe 打包方法、发布自检清单、常见问题）。
+
+---
+
+## 四、模组系统（名著模组 / 插件）
 
 游戏内置插件架构，可以把人生放进完全不同的世界（例如模拟某本名著里的人物一生）。
 
@@ -210,7 +243,7 @@ python LifeSimulator.py
 
 ---
 
-## 四、文件说明
+## 五、文件说明
 
 | 文件 | 说明 |
 | --- | --- |
@@ -222,22 +255,28 @@ python LifeSimulator.py
 | `docs\模组开发指南.md` | 模组/插件开发说明 |
 | `.vscode\launch.json` | VS Code 调试配置（F5 直接运行） |
 | `run_game.bat` | 双击即可运行的批处理 |
-| `dev_tools\` | 开发与验证脚本（模块化源码、验收测试、寿命/曲线统计、界面测试、标定工具） |
+| `启动游戏.bat` | 双击即玩（自动找 Python、自动建 save\、启用便携模式） |
+| `使用说明.txt` | 给朋友的简明说明 |
+| `portable.txt` | 便携模式标记：存档放程序同目录 |
+| `release\` | 打包产物（`package_release.py` 生成） |
+| `dev_tools\` | 开发与验证脚本（模块化源码、验收测试、便携/寿命/曲线统计、界面测试、打包工具） |
 
 ---
 
-## 五、命令参数
+## 六、命令参数
 
 ```bat
 python LifeSimulator.py                          :: 启动图形界面
 python LifeSimulator.py --selftest               :: 无界面自检
 python LifeSimulator.py --make-mod <模组id>      :: 生成模组模板
 python LifeSimulator.py --base-dir D:\some\dir   :: 指定数据目录
+python LifeSimulator.py --portable               :: 强制便携模式（存档放程序同目录）
+python LifeSimulator.py --no-portable            :: 强制默认模式（用 D:\desktop\LifeSimulator）
 ```
 
 ---
 
-## 六、健壮性说明
+## 七、健壮性说明
 
 * 路径不存在会自动创建；盘符不可写会自动切到备用目录并在界面提示。
 * 存档损坏 / 缺字段 / 旧版本存档：自动补齐新字段（体质、家境、阶段、行动点等），不崩溃。
