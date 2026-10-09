@@ -1863,7 +1863,22 @@ def _out(lo, hi, desc, effects=None, tone="neutral", next_event=None):
             "tone": tone, "next_event": next_event}
 
 
-def _choice(label, hint="", roll="d6", outcomes=None, need_money=0, need_disease=False):
+def _out_parent(lo, hi, desc, effects=None, tone="neutral", next_event=None):
+    """带"父母同在"标记的结果区间（对 6 岁以下开放）。"""
+    out = _out(lo, hi, desc, effects, tone, next_event)
+    out["with_parents"] = True
+    return out
+
+
+def _choice_parent(label, hint="", roll="d6", outcomes=None,
+                   need_money=0, need_disease=False):
+    """带"父母同在"标记的选项（对 6 岁以下开放）。"""
+    return _choice(label, hint, roll, outcomes, need_money, need_disease,
+                   with_parents=True)
+
+
+def _choice(label, hint="", roll="d6", outcomes=None, need_money=0, need_disease=False,
+            with_parents=False):
     return {
         "label": label,
         "hint": hint,
@@ -1871,6 +1886,7 @@ def _choice(label, hint="", roll="d6", outcomes=None, need_money=0, need_disease
         "outcomes": outcomes or [],
         "need_money": need_money,
         "need_disease": need_disease,
+        "with_parents": with_parents,
     }
 
 
@@ -2495,6 +2511,48 @@ _ev("plain_day_4", "小小的惬意", "日常", 26,
 
 
 
+_ev("env_outdoor_child", "父母带出门", "环境", 700,
+    ["父母推着婴儿车带你去公园，你在树荫下睡得特别香。",
+     "爸妈带你去超市买菜，你坐在购物车里东张西望。"],
+    [_choice_parent("开心出门", "有大人陪着才安全", "d6", [
+        _out_parent(1, 4, "你晒了晒太阳，回家后睡得格外好。", {"health": +1, "happy": +6}, "good"),
+        _out_parent(5, 6, "路上遇到了同龄的小朋友，你们玩到了一起。", {"happy": +9}, "good"),
+    ]),
+     _choice_parent("出门就哭", "只想待在家里", "d6", [
+        _out_parent(1, 3, "你在公园哭了半小时，父母只好提前带你回家。", {"happy": -3}, "bad"),
+        _out_parent(4, 6, "哄了一会儿你就安静下来了。", {"happy": +2}, "neutral"),
+    ])],
+    tone="good", tags=["outdoor", "growth"],
+    cond=lambda p: p.age <= 6)
+
+_ev("grow_family_trip", "全家远行", "情感", 600,
+    ["一家人坐了很久的车去看海，你全程被抱着。",
+     "父母带你回老家探亲，火车上你趴在窗边看了很久。"],
+    [_choice_parent("跟着父母出远门", "幼年第一次远行", "d6", [
+        _out_parent(1, 3, "路上你晕车吐了，闹了一路。", {"money": -300, "health": -2, "happy": +2}, "neutral"),
+        _out_parent(4, 6, "你第一次见到海，兴奋得手舞足蹈。", {"money": -500, "happy": +14}, "good"),
+    ]),
+     _choice_parent("留在家里", "不出门更安稳", "d6", [
+        _out_parent(1, 6, "你留在家里，由爷爷奶奶照看。", {"happy": +2}, "neutral"),
+    ])],
+    tone="good", tags=["outdoor", "commute", "growth"],
+    cond=lambda p: p.age <= 6)
+
+_ev("school_commute", "上学路上", "环境", 800,
+    ["早晨的路口人来车往，你背着书包等红绿灯。",
+     "放学时下起了雨，你站在校门口犹豫要不要冲出去。"],
+    [_choice("和同学结伴走", "结伴更安全，也可能贪玩", "d6", [
+        _out(1, 3, "你们一路打闹，回家晚了半小时。", {"happy": +3, "health": -1}, "neutral"),
+        _out(4, 6, "你们安全到家，还顺路买了零食。", {"money": -20, "happy": +5}, "good"),
+    ]),
+     _choice("自己走快一点", "想早点回家", "d10", [
+        _out(1, 3, "你跑得太急，在台阶上摔了一跤。", {"health": -4, "happy": -3}, "bad"),
+        _out(4, 10, "你一路小跑，准时赶回了家。", {"happy": +1}, "neutral"),
+    ])],
+    tone="neutral", tags=["commute", "school"],
+    cond=lambda p: 7 <= p.age <= 18)
+
+
 # ------------------------------------------------------------------------------
 # 8.3 情感社交类事件（婚恋、社交；婴幼儿不会说话、不能独自出门，故有严格年龄限制）
 # ------------------------------------------------------------------------------
@@ -2588,7 +2646,7 @@ _ev("love_friend_gather", "朋友聚会", "情感", 16,
      _choice("在家休息", "省钱省力", "d4", [
         _out(1, 4, "你在家看了部老电影，也挺好。", {"happy": +3, "health": +1}, "good"),
     ])],
-    tone="good", tags=["social"])
+    tone="good", tags=["social"], cond=lambda p: p.age >= 6)
 
 _ev("love_quarrel", "和亲近的人吵架", "情感", 12,
     ["一句话没说好，你和最亲近的人吵得面红耳赤。",
@@ -2614,7 +2672,7 @@ _ev("love_help_stranger", "帮助陌生人", "情感", 14,
      _choice("拍视频报警后离开", "理性处理", "d6", [
         _out(1, 6, "警察及时赶到，事情妥善解决。", {"happy": +4}, "neutral"),
     ])],
-    tone="good", tags=["social"])
+    tone="good", tags=["social"], cond=lambda p: p.age >= 10)
 
 _ev("love_gift", "送礼", "情感", 10,
     ["爸妈的生日快到了，你想买点像样的礼物。",
@@ -2727,7 +2785,7 @@ _ev("env_heatstroke_risk", "闷热难耐", "环境", 8,
 # 8.5 随机意外类事件
 # ------------------------------------------------------------------------------
 
-_ev("rand_lottery", "买彩票", "意外", 14,
+_ev("rand_lottery", "买彩票", "意外", 14,  # 成年人专属
     ["路过彩票店，你鬼使神差地买了两注。",
      "朋友凑钱合买刮刮乐，硬塞给你一张。"],
     [_choice("试试运气", "小赌怡情", "d100", [
@@ -2739,7 +2797,7 @@ _ev("rand_lottery", "买彩票", "意外", 14,
      _choice("不参与", "踏实过日子", "d4", [
         _out(1, 4, "你觉得钱还是攥在手里最实在。", {"happy": +2}, "neutral"),
     ])],
-    tone="neutral", tags=["random"])
+    tone="neutral", tags=["random"], cond=lambda p: p.age >= 18)
 
 _ev("rand_lose_money", "丢钱", "意外", 16,
     ["手机不见了，你翻遍了所有口袋。",
@@ -2751,7 +2809,7 @@ _ev("rand_lose_money", "丢钱", "意外", 16,
      _choice("算了，破财免灾", "心态放平", "d6", [
         _out(1, 6, "你安慰自己：钱没了可以再赚。", {"money": -1200, "happy": -3}, "neutral"),
     ])],
-    tone="bad", tags=["random"])
+    cond=lambda p: p.age >= 8, tone="bad", tags=["random"])
 
 _ev("rand_injury", "意外受伤", "意外", 14,
     ["下楼梯时一脚踩空，脚踝传来剧痛。",
@@ -2777,7 +2835,7 @@ _ev("rand_adventure", "奇遇", "意外", 10,
      _choice("一笑而过", "不理会", "d6", [
         _out(1, 6, "你继续过自己的日子。", {"happy": +1}, "neutral"),
     ])],
-    tone="neutral", tags=["random"])
+    cond=lambda p: p.age >= 16, tone="neutral", tags=["random"])
 
 _ev("rand_gift", "意外之财", "意外", 10,
     ["大学同学突然转来一笔钱，说是当年借的。",
@@ -2785,7 +2843,7 @@ _ev("rand_gift", "意外之财", "意外", 10,
     [_choice("欣然接受", "好事成双", "d6", [
         _out(1, 6, "这笔意外收入让你心情大好。", {"money": +2000, "happy": +10}, "good"),
     ])],
-    tone="good", tags=["random"])
+    cond=lambda p: p.age >= 12, tone="good", tags=["random"])
 
 _ev("rand_car_accident", "交通事故", "意外", 8,
     ["过马路时一辆电动车擦着你飞驰而过。",
@@ -2811,7 +2869,7 @@ _ev("rand_found_money", "捡到钱包", "意外", 10,
         _out(1, 3, "钱包主人的朋友正好看到，你被当场抓住。", {"money": -2000, "happy": -18}, "bad"),
         _out(4, 10, "你把钱花了，但心里一直不舒服。", {"money": +1500, "happy": -6}, "neutral"),
     ])],
-    tone="neutral", tags=["random"])
+    cond=lambda p: p.age >= 8, tone="neutral", tags=["random"])
 
 
 # ------------------------------------------------------------------------------
@@ -2995,7 +3053,13 @@ def event_allowed_today(player, event, category, engine=None):
 
     # 1) 幼年出门限制：需要父母陪同
     if player.age < 6 and ("outdoor" in tags or "commute" in tags):
-        if not event.get("with_parents", False):
+        with_parents = bool(event.get("with_parents", False))
+        if not with_parents:
+            # 事件本身没标记时，只要它所有选项都带 with_parents 也视为"父母陪同"
+            choices = event.get("choices") or []
+            with_parents = bool(choices) and all(
+                bool(c.get("with_parents")) for c in choices)
+        if not with_parents:
             return False
 
     # 2) 上学/工作在读阶段才有的校园、职场类事件
